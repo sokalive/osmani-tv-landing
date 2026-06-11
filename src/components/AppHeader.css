@@ -1,0 +1,44 @@
+.app-header {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+
+.app-header__logo svg {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.app-header__title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.2;
+  margin: 0;
+}
+
+.app-header__category {
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  font-weight: 500;
+  margin: 0.25rem 0 0;
+}
+
+.app-header__tagline {
+  font-size: 0.9375rem;
+  color: var(--color-text-secondary);
+  margin: 0.5rem 0 0;
+  line-height: 1.5;
+}
+
+@media (min-width: 768px) {
+  .app-header__logo svg {
+    width: 96px;
+    height: 96px;
+  }
+
+  .app-header__title {
+    font-size: 2.25rem;
+  }
+}
