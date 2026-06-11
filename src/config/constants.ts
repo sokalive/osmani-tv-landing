@@ -1,4 +1,7 @@
-export const PLAY_STORE_URL = "PASTE_PLAY_STORE_LINK_HERE";
+export const PLAY_STORE_URL =
+  "https://play.google.com/store/apps/details?id=com.burudanitv.app";
+
+export const APP_PACKAGE_ID = "com.burudanitv.app";
 
 export const APP_CONFIG = {
   name: "Osmani TV",

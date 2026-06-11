@@ -14,7 +14,7 @@ npm run dev
 Update the Play Store URL in `src/config/constants.ts`:
 
 ```ts
-export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=your.app.id";
+export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.burudanitv.app";
 ```
 
 Also update `SEO.siteUrl` in the same file to match your production domain.
