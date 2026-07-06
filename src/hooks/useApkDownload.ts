@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APK_CONFIG, isSameOriginApk, resolveApkUrl } from "../config/download";
 import {
-  attemptInstallHandoff,
   downloadApkWithProgress,
+  getInstallInstructions,
   saveBlobToDevice,
+  shareApkFile,
   triggerNativeDownload,
   triggerNavigationDownload,
   type DownloadProgress,
@@ -12,7 +13,8 @@ import { probeApkAvailability } from "../utils/apkValidation";
 import { getBrowserProfile, isBackForwardNavigation } from "../utils/browser";
 
 const SESSION_AUTO_KEY = "osmani_apk_auto_attempted";
-const SESSION_COMPLETE_KEY = "osmani_apk_download_complete";
+const SESSION_DOWNLOADED_KEY = "osmani_apk_download_complete";
+const SESSION_METHOD_KEY = "osmani_apk_download_method";
 
 export type { DownloadProgress } from "../utils/apkDownload";
 
@@ -30,8 +32,9 @@ export type DownloadState =
   | "manual_download_required";
 
 function getInitialState(): DownloadState {
-  if (sessionStorage.getItem(SESSION_COMPLETE_KEY) === "true") {
-    return "open_install_ready";
+  if (sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true") {
+    // Honest: in-memory Blob is always lost after refresh/navigation
+    return "manual_download_required";
   }
   return "idle";
 }
@@ -43,37 +46,52 @@ export function useApkDownload() {
     total: null,
     percent: null,
   });
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() =>
+    sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true"
+      ? "APK was downloaded earlier — open Downloads to install. (In-memory file not available after refresh.)"
+      : "",
+  );
   const [showInstallHint, setShowInstallHint] = useState(
-    () => sessionStorage.getItem(SESSION_COMPLETE_KEY) === "true",
+    () => sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true",
   );
   const [hasBlobInMemory, setHasBlobInMemory] = useState(false);
+  const [browserDownloadStarted, setBrowserDownloadStarted] = useState(
+    () => sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true",
+  );
   const blobRef = useRef<Blob | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const browser = getBrowserProfile();
 
-  const markDownloadSuccess = useCallback(
-    (blob: Blob | null, userMessage: string) => {
-      if (blob) {
-        blobRef.current = blob;
-        setHasBlobInMemory(true);
-      } else {
-        setHasBlobInMemory(false);
-      }
-      sessionStorage.setItem(SESSION_COMPLETE_KEY, "true");
-      setState("open_install_ready");
-      setMessage(userMessage);
-      setShowInstallHint(true);
-    },
-    [],
-  );
+  const markFetchComplete = useCallback((blob: Blob) => {
+    blobRef.current = blob;
+    setHasBlobInMemory(true);
+    setBrowserDownloadStarted(true);
+    sessionStorage.setItem(SESSION_DOWNLOADED_KEY, "true");
+    sessionStorage.setItem(SESSION_METHOD_KEY, "fetch-blob");
+    setState("open_install_ready");
+    setMessage("Download complete");
+    setShowInstallHint(true);
+  }, []);
+
+  const markBrowserHandoff = useCallback((method: "native-anchor" | "navigation") => {
+    blobRef.current = null;
+    setHasBlobInMemory(false);
+    setBrowserDownloadStarted(true);
+    sessionStorage.setItem(SESSION_DOWNLOADED_KEY, "true");
+    sessionStorage.setItem(SESSION_METHOD_KEY, method);
+    setState("manual_download_required");
+    setMessage(
+      "Download started — check your notification shade, then tap Osmani-TV-Max.apk.",
+    );
+    setShowInstallHint(true);
+  }, []);
 
   const startDownload = useCallback(
     async (options: { manual?: boolean; auto?: boolean } = {}) => {
       if (busyRef.current) return;
       if (
-        sessionStorage.getItem(SESSION_COMPLETE_KEY) === "true" &&
+        sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true" &&
         !options.manual
       ) {
         return;
@@ -95,9 +113,9 @@ export function useApkDownload() {
           if (probe.reason.includes("404") || probe.reason.includes("not found")) {
             setState("unavailable");
             setMessage(
-              "APK not uploaded yet. Place osmani-tv.apk in public/downloads/ or set externalUrl in src/config/download.ts.",
+              "APK not connected yet. Upload to public/downloads/osmani-tv.apk or set externalUrl (Bunny CDN recommended).",
             );
-          } else if (probe.reason.includes("HTML")) {
+          } else if (probe.reason.includes("HTML") || probe.reason.includes("mismatch")) {
             setState("invalid_apk_response");
             setMessage(probe.reason);
           } else {
@@ -129,48 +147,36 @@ export function useApkDownload() {
             );
             saveBlobToDevice(result.blob!, APK_CONFIG.fileName);
             setState("complete");
-            setMessage("Download complete");
-            markDownloadSuccess(result.blob, "Download complete");
+            markFetchComplete(result.blob!);
             return;
           } catch (error) {
             const msg =
               error instanceof Error ? error.message : "Download failed";
-            if (msg.includes("HTML") || msg.includes("Invalid APK")) {
+            if (msg.includes("HTML") || msg.includes("Invalid APK") || msg.includes("mismatch")) {
               setState("invalid_apk_response");
               setMessage(msg);
               return;
             }
-            // Fall through to native anchor for same-origin edge cases
           }
         } else {
-          // Cross-origin: progress requires CORS; use native download
           setState("cors_limited");
           setMessage("Downloading via browser (progress unavailable)…");
         }
 
         if (browser.isMetaInApp) {
           triggerNavigationDownload(url);
-          markDownloadSuccess(
-            null,
-            "Download started — check your notifications, then tap the file to install.",
-          );
+          markBrowserHandoff("navigation");
           return;
         }
 
         if (browser.isSamsungInternet) {
           triggerNavigationDownload(url);
-          markDownloadSuccess(
-            null,
-            "Download started in Samsung Internet — open Downloads to install.",
-          );
+          markBrowserHandoff("navigation");
           return;
         }
 
         triggerNativeDownload(url, APK_CONFIG.fileName);
-        markDownloadSuccess(
-          null,
-          "Download started — check your notifications, then tap Osmani-TV-Max.apk.",
-        );
+        markBrowserHandoff("native-anchor");
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Download failed";
         if (options.auto) {
@@ -187,7 +193,7 @@ export function useApkDownload() {
         busyRef.current = false;
       }
     },
-    [browser, markDownloadSuccess],
+    [browser, markBrowserHandoff, markFetchComplete],
   );
 
   const startDownloadRef = useRef(startDownload);
@@ -196,36 +202,50 @@ export function useApkDownload() {
     startDownloadRef.current = startDownload;
   }, [startDownload]);
 
-  const handleOpenInstall = useCallback(async () => {
-    const result = await attemptInstallHandoff(blobRef.current, {
-      preferShare: browser.isAndroid && browser.supportsWebShareFiles,
-    });
+  const handleOpenInstall = useCallback(() => {
+    const result = getInstallInstructions(
+      hasBlobInMemory,
+      browserDownloadStarted,
+    );
     setShowInstallHint(true);
     setMessage(result.message);
+  }, [hasBlobInMemory, browserDownloadStarted]);
+
+  const handleShareApk = useCallback(async () => {
     if (!blobRef.current) {
-      setState("manual_download_required");
+      handleOpenInstall();
+      return;
     }
-  }, [browser.isAndroid, browser.supportsWebShareFiles]);
+    const result = await shareApkFile(blobRef.current);
+    setMessage(result.message);
+    setShowInstallHint(true);
+  }, [handleOpenInstall]);
 
   const handlePrimaryAction = useCallback(() => {
-    if (state === "open_install_ready" || state === "complete") {
-      void handleOpenInstall();
+    if (
+      state === "open_install_ready" ||
+      state === "complete" ||
+      state === "manual_download_required"
+    ) {
+      handleOpenInstall();
       return;
     }
     void startDownload({ manual: true });
   }, [handleOpenInstall, startDownload, state]);
 
   const handleDownloadAgain = useCallback(() => {
-    sessionStorage.removeItem(SESSION_COMPLETE_KEY);
+    sessionStorage.removeItem(SESSION_DOWNLOADED_KEY);
+    sessionStorage.removeItem(SESSION_METHOD_KEY);
     blobRef.current = null;
     setHasBlobInMemory(false);
+    setBrowserDownloadStarted(false);
     void startDownload({ manual: true });
   }, [startDownload]);
 
   useEffect(() => {
     if (sessionStorage.getItem(SESSION_AUTO_KEY) === "true") return;
     if (isBackForwardNavigation()) return;
-    if (sessionStorage.getItem(SESSION_COMPLETE_KEY) === "true") return;
+    if (sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true") return;
 
     sessionStorage.setItem(SESSION_AUTO_KEY, "true");
     void startDownloadRef.current({ auto: true });
@@ -235,13 +255,13 @@ export function useApkDownload() {
     const onPageShow = (event: PageTransitionEvent) => {
       if (
         event.persisted &&
-        sessionStorage.getItem(SESSION_COMPLETE_KEY) === "true"
+        sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true"
       ) {
-        setState("open_install_ready");
+        setHasBlobInMemory(false);
+        blobRef.current = null;
+        setState("manual_download_required");
         setMessage(
-          blobRef.current
-            ? "Download complete"
-            : "Download completed earlier — open Downloads to install.",
+          "Download completed earlier — open Downloads to install. (In-memory file not available.)",
         );
         setShowInstallHint(true);
       }
@@ -250,6 +270,8 @@ export function useApkDownload() {
     return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
+  const canShareApk = hasBlobInMemory && browser.supportsWebShareFiles;
+
   return {
     state,
     progress,
@@ -257,9 +279,12 @@ export function useApkDownload() {
     browserLabel: browser.label,
     showInstallHint,
     hasBlobInMemory,
+    browserDownloadStarted,
+    canShareApk,
     isMetaInApp: browser.isMetaInApp,
     handlePrimaryAction,
     handleDownloadAgain,
     handleOpenInstall,
+    handleShareApk,
   };
 }

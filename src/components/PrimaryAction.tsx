@@ -12,6 +12,9 @@ type PrimaryActionProps = {
   isMetaInApp: boolean;
   onPrimaryClick: () => void;
   onDownloadAgain: () => void;
+  onShareApk?: () => void;
+  canShareApk?: boolean;
+  browserDownloadStarted?: boolean;
 };
 
 function getButtonLabel(state: DownloadState): string {
@@ -54,6 +57,9 @@ export function PrimaryAction({
   isMetaInApp,
   onPrimaryClick,
   onDownloadAgain,
+  onShareApk,
+  canShareApk = false,
+  browserDownloadStarted = false,
 }: PrimaryActionProps) {
   const isBusy =
     state === "preparing" || state === "downloading" || state === "cors_limited";
@@ -150,15 +156,25 @@ export function PrimaryAction({
           </ol>
           {!hasBlobInMemory && installReady && (
             <p className="primary-action__hint-note">
-              The APK was handed off to your browser download manager. JavaScript
-              cannot open the Android installer directly.
+              The APK is in your browser download manager. JavaScript cannot
+              open the Android package installer directly.
             </p>
           )}
-          {hasBlobInMemory && (
+          {hasBlobInMemory && browserDownloadStarted && (
             <p className="primary-action__hint-note">
-              OPEN / INSTALL shows install steps or the system share sheet — not
-              a guaranteed package installer launch.
+              Download complete. OPEN / INSTALL shows install steps. Use Share
+              APK only if you need the system share sheet (not guaranteed
+              installer).
             </p>
+          )}
+          {canShareApk && onShareApk && (
+            <button
+              type="button"
+              className="primary-action__share-btn"
+              onClick={onShareApk}
+            >
+              Share APK (optional)
+            </button>
           )}
         </div>
       )}

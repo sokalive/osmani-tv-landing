@@ -1,4 +1,4 @@
-import { APK_CONFIG } from "../config/download";
+import { APK_CONFIG, APK_RELEASE } from "../config/download";
 
 export type ApkValidationResult =
   | { valid: true; contentLength: number | null; contentType: string | null }
@@ -35,6 +35,16 @@ export function validateApkHead(
       reason: `Invalid APK response: file too small (${length} bytes)`,
     };
   }
+  if (
+    length !== null &&
+    APK_RELEASE.expectedSizeBytes !== null &&
+    length !== APK_RELEASE.expectedSizeBytes
+  ) {
+    return {
+      valid: false,
+      reason: `APK size mismatch: expected ${APK_RELEASE.expectedSizeBytes} bytes, got ${length}`,
+    };
+  }
   return { valid: true, contentLength: length, contentType };
 }
 
@@ -51,6 +61,15 @@ export async function validateApkBlob(blob: Blob): Promise<ApkValidationResult> 
       reason: `Invalid APK response: file too small (${blob.size} bytes)`,
     };
   }
+  if (
+    APK_RELEASE.expectedSizeBytes !== null &&
+    blob.size !== APK_RELEASE.expectedSizeBytes
+  ) {
+    return {
+      valid: false,
+      reason: `APK size mismatch: expected ${APK_RELEASE.expectedSizeBytes} bytes, got ${blob.size}`,
+    };
+  }
   const header = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
   if (header[0] !== APK_MAGIC[0] || header[1] !== APK_MAGIC[1]) {
     const textPeek = await blob.slice(0, 32).text();
@@ -63,6 +82,24 @@ export async function validateApkBlob(blob: Blob): Promise<ApkValidationResult> 
     return {
       valid: false,
       reason: "Invalid APK response: not a valid APK/ZIP archive",
+    };
+  }
+  return { valid: true, contentLength: blob.size, contentType: blob.type };
+}
+
+export async function validateApkSha256(blob: Blob): Promise<ApkValidationResult> {
+  if (!APK_RELEASE.sha256) {
+    return { valid: true, contentLength: blob.size, contentType: blob.type };
+  }
+  const buffer = await blob.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashHex = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  if (hashHex !== APK_RELEASE.sha256.toLowerCase()) {
+    return {
+      valid: false,
+      reason: `APK SHA-256 mismatch: expected ${APK_RELEASE.sha256}, got ${hashHex}`,
     };
   }
   return { valid: true, contentLength: blob.size, contentType: blob.type };

@@ -17,9 +17,12 @@ function App() {
     message,
     showInstallHint,
     hasBlobInMemory,
+    browserDownloadStarted,
+    canShareApk,
     isMetaInApp,
     handlePrimaryAction,
     handleDownloadAgain,
+    handleShareApk,
   } = useApkDownload();
 
   return (
@@ -35,9 +38,12 @@ function App() {
             message={message}
             showInstallHint={showInstallHint}
             hasBlobInMemory={hasBlobInMemory}
+            browserDownloadStarted={browserDownloadStarted}
+            canShareApk={canShareApk}
             isMetaInApp={isMetaInApp}
             onPrimaryClick={handlePrimaryAction}
             onDownloadAgain={handleDownloadAgain}
+            onShareApk={handleShareApk}
           />
           <p className="app__install-note">
             Download on phone. Android 6.0 or later required.
