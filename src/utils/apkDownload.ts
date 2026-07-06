@@ -150,11 +150,9 @@ export function getInstallInstructions(
 
   let message: string;
   if (blobInMemory && browserDownloadStarted) {
-    message =
-      "Your APK download completed. Open your notification shade or Downloads folder, then tap Osmani-TV-Max.apk. Allow installs from this browser if Android asks.";
+    message = `Your APK download completed. Open your notification shade or Downloads folder, then tap ${APK_CONFIG.fileName}. Allow installs from this browser if Android asks.`;
   } else if (browserDownloadStarted) {
-    message =
-      "The APK was sent to your browser download manager. Open your notification shade or Downloads folder, then tap Osmani-TV-Max.apk to install.";
+    message = `The APK was sent to your browser download manager. Open your notification shade or Downloads folder, then tap ${APK_CONFIG.fileName} to install.`;
   } else {
     message =
       "Download the APK first, then open your notification shade or Downloads folder to install.";

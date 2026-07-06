@@ -82,7 +82,7 @@ export function useApkDownload() {
     sessionStorage.setItem(SESSION_METHOD_KEY, method);
     setState("manual_download_required");
     setMessage(
-      "Download started — check your notification shade, then tap Osmani-TV-Max.apk.",
+      `Download started — check your notification shade, then tap ${APK_CONFIG.fileName}.`,
     );
     setShowInstallHint(true);
   }, []);

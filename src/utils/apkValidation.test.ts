@@ -1,8 +1,31 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+vi.mock("../config/download", () => ({
+  APK_CONFIG: {
+    minBytes: 100_000,
+    externalUrl: "https://osmani-tv-apk-download.b-cdn.net/Osmani%20TV%20Mx.apk",
+  },
+  APK_RELEASE: {
+    expectedSizeBytes: null,
+    sha256: null,
+    minBytes: 100_000,
+  },
+  isSameOriginApk: (url: string) => {
+    try {
+      return new URL(url).origin === "http://localhost:5173";
+    } catch {
+      return false;
+    }
+  },
+  isCrossOriginCdnApk: (url: string) =>
+    url.includes("b-cdn.net"),
+}));
+
 import {
   isHtmlContentType,
   validateApkHead,
   validateApkBlob,
+  probeApkAvailability,
 } from "./apkValidation";
 
 describe("isHtmlContentType", () => {
@@ -35,7 +58,16 @@ describe("validateApkHead", () => {
   });
 
   it("accepts valid head", () => {
-    const r = validateApkHead(200, "application/vnd.android.package-archive", "90000000");
+    const r = validateApkHead(200, "application/vnd.android.package-archive", "90834935");
+    expect(r.valid).toBe(true);
+  });
+});
+
+describe("probeApkAvailability", () => {
+  it("trusts configured cross-origin CDN without browser CORS", async () => {
+    const r = await probeApkAvailability(
+      "https://osmani-tv-apk-download.b-cdn.net/Osmani%20TV%20Mx.apk",
+    );
     expect(r.valid).toBe(true);
   });
 });

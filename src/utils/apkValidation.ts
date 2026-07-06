@@ -1,4 +1,4 @@
-import { APK_CONFIG, APK_RELEASE } from "../config/download";
+import { APK_CONFIG, APK_RELEASE, isCrossOriginCdnApk, isSameOriginApk } from "../config/download";
 
 export type ApkValidationResult =
   | { valid: true; contentLength: number | null; contentType: string | null }
@@ -106,6 +106,16 @@ export async function validateApkSha256(blob: Blob): Promise<ApkValidationResult
 }
 
 export async function probeApkAvailability(url: string): Promise<ApkValidationResult> {
+  // Bunny CDN serves GET/HEAD but no Access-Control-Allow-Origin.
+  // Browser fetch() to cross-origin fails; navigation/anchor download still works.
+  if (isCrossOriginCdnApk(url) && APK_CONFIG.externalUrl) {
+    return {
+      valid: true,
+      contentLength: APK_RELEASE.expectedSizeBytes,
+      contentType: "application/octet-stream",
+    };
+  }
+
   try {
     const response = await fetch(url, { method: "HEAD", cache: "no-store" });
     return validateApkHead(
@@ -114,6 +124,9 @@ export async function probeApkAvailability(url: string): Promise<ApkValidationRe
       response.headers.get("content-length"),
     );
   } catch {
+    if (isSameOriginApk(url)) {
+      return { valid: false, reason: "Network error while checking APK" };
+    }
     return { valid: false, reason: "Network error while checking APK" };
   }
 }
