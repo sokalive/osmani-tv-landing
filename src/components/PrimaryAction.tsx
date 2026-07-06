@@ -1,6 +1,13 @@
-import type { DownloadState } from "../hooks/useApkDownload";
+import type { DownloadState } from "../utils/downloadState";
 import type { DownloadProgress } from "../utils/apkDownload";
 import { APK_CONFIG } from "../config/download";
+import {
+  getPrimaryButtonLabel,
+  isActiveFetchState,
+  isBrowserHandoffState,
+  isVerifiedCompleteState,
+  shouldShowDownloadAgain,
+} from "../utils/downloadState";
 import "./PrimaryAction.css";
 
 type PrimaryActionProps = {
@@ -14,39 +21,7 @@ type PrimaryActionProps = {
   onDownloadAgain: () => void;
   onShareApk?: () => void;
   canShareApk?: boolean;
-  browserDownloadStarted?: boolean;
 };
-
-function getButtonLabel(state: DownloadState): string {
-  switch (state) {
-    case "preparing":
-      return "Preparing download…";
-    case "downloading":
-    case "cors_limited":
-      return "Downloading…";
-    case "complete":
-    case "open_install_ready":
-    case "manual_download_required":
-      return "OPEN / INSTALL";
-    case "blocked":
-      return "Download";
-    case "network_error":
-    case "invalid_apk_response":
-      return "Try again";
-    case "unavailable":
-      return "Unavailable";
-    default:
-      return "Download";
-  }
-}
-
-function isInstallReady(state: DownloadState): boolean {
-  return (
-    state === "open_install_ready" ||
-    state === "complete" ||
-    state === "manual_download_required"
-  );
-}
 
 export function PrimaryAction({
   state,
@@ -59,16 +34,13 @@ export function PrimaryAction({
   onDownloadAgain,
   onShareApk,
   canShareApk = false,
-  browserDownloadStarted = false,
 }: PrimaryActionProps) {
-  const isBusy =
-    state === "preparing" || state === "downloading" || state === "cors_limited";
+  const isBusy = isActiveFetchState(state);
   const isDisabled = state === "unavailable";
-  const showProgress =
-    state === "downloading" || state === "cors_limited";
-  const showPercent =
-    showProgress && progress.percent !== null && progress.percent > 0;
-  const installReady = isInstallReady(state);
+  const showProgress = state === "downloading" && progress.loaded > 0;
+  const showPercent = showProgress && progress.percent !== null;
+  const verifiedComplete = isVerifiedCompleteState(state);
+  const browserHandoff = isBrowserHandoffState(state);
 
   return (
     <section className="primary-action" aria-label="Download Osmani TV">
@@ -81,14 +53,14 @@ export function PrimaryAction({
       <div className="primary-action__buttons">
         <button
           type="button"
-          className={`primary-action__btn ${installReady ? "primary-action__btn--install" : ""}`}
+          className={`primary-action__btn ${verifiedComplete ? "primary-action__btn--install" : ""}`}
           onClick={onPrimaryClick}
           disabled={isBusy || isDisabled}
           aria-busy={isBusy}
         >
-          {getButtonLabel(state)}
+          {getPrimaryButtonLabel(state)}
         </button>
-        {installReady && (
+        {shouldShowDownloadAgain(state) && (
           <button
             type="button"
             className="primary-action__btn secondary"
@@ -119,16 +91,9 @@ export function PrimaryAction({
                 {progress.percent}%
               </span>
             </>
-          ) : (
-            <div
-              className="primary-action__progress-bar primary-action__progress-bar--indeterminate"
-              role="progressbar"
-              aria-busy="true"
-              aria-label="Downloading, progress indeterminate"
-            >
-              <div className="primary-action__progress-fill primary-action__progress-fill--indeterminate" />
-            </div>
-          )}
+          ) : progress.total !== null ? (
+            <span className="primary-action__progress-text">{message}</span>
+          ) : null}
         </div>
       )}
 
@@ -142,7 +107,16 @@ export function PrimaryAction({
         </p>
       )}
 
-      {showInstallHint && (
+      {browserHandoff && (
+        <p className="primary-action__hint-note primary-action__message">
+          Download is handled by your browser. This page cannot show byte
+          progress or confirm completion without CDN CORS. Check your
+          notification shade, then tap <em>{APK_CONFIG.fileName}</em> to
+          install.
+        </p>
+      )}
+
+      {showInstallHint && verifiedComplete && (
         <div className="primary-action__hint">
           <p>
             <strong>To install on Android:</strong>
@@ -154,17 +128,10 @@ export function PrimaryAction({
             </li>
             <li>Confirm in the Android package installer.</li>
           </ol>
-          {!hasBlobInMemory && installReady && (
+          {hasBlobInMemory && (
             <p className="primary-action__hint-note">
-              The APK is in your browser download manager. JavaScript cannot
-              open the Android package installer directly.
-            </p>
-          )}
-          {hasBlobInMemory && browserDownloadStarted && (
-            <p className="primary-action__hint-note">
-              Download complete. OPEN / INSTALL shows install steps. Use Share
-              APK only if you need the system share sheet (not guaranteed
-              installer).
+              OPEN / INSTALL shows install steps. JavaScript cannot launch the
+              Android package installer directly.
             </p>
           )}
           {canShareApk && onShareApk && (

@@ -31,6 +31,11 @@ Configure in Bunny → Edge Rules or origin headers:
 | `Content-Disposition` | `attachment; filename="Osmani-TV-Max.apk"` |
 | `Accept-Ranges` | `bytes` |
 | `Access-Control-Allow-Origin` | `https://osmani-tv-landing.vercel.app` |
+| `Access-Control-Expose-Headers` | `Content-Length, Content-Range, Accept-Ranges, Content-Disposition` |
+
+**Without CORS**, the landing page cannot measure byte progress. Downloads still work via the browser download manager, but the page stays in an honest `browser_handoff` state (no fake progress, no premature OPEN / INSTALL).
+
+**With CORS configured**, the page can fetch+stream the APK, show real `Downloading… 48% (43.20 MB / 90.83 MB)`, verify SHA-256, and only then show OPEN / INSTALL.
 | `Cache-Control` | `public, max-age=3600, must-revalidate` |
 
 CORS is required only if you want **byte-level download progress** via `fetch()` from the landing page. Without CORS, the landing page falls back to native browser download (no progress bar).

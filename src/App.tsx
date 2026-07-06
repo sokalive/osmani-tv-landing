@@ -17,7 +17,6 @@ function App() {
     message,
     showInstallHint,
     hasBlobInMemory,
-    browserDownloadStarted,
     canShareApk,
     isMetaInApp,
     handlePrimaryAction,
@@ -38,7 +37,6 @@ function App() {
             message={message}
             showInstallHint={showInstallHint}
             hasBlobInMemory={hasBlobInMemory}
-            browserDownloadStarted={browserDownloadStarted}
             canShareApk={canShareApk}
             isMetaInApp={isMetaInApp}
             onPrimaryClick={handlePrimaryAction}

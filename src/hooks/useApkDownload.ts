@@ -11,32 +11,32 @@ import {
 } from "../utils/apkDownload";
 import { probeApkAvailability } from "../utils/apkValidation";
 import { getBrowserProfile, isBackForwardNavigation } from "../utils/browser";
+import {
+  type DownloadState,
+  isVerifiedCompleteState,
+} from "../utils/downloadState";
+import { formatProgressLabel } from "../utils/formatBytes";
 
 const SESSION_AUTO_KEY = "osmani_apk_auto_attempted";
-const SESSION_DOWNLOADED_KEY = "osmani_apk_download_complete";
-const SESSION_METHOD_KEY = "osmani_apk_download_method";
+/** Only set when fetch+verify completed with blob in this session */
+const SESSION_VERIFIED_KEY = "osmani_apk_verified_complete";
 
 export type { DownloadProgress } from "../utils/apkDownload";
-
-export type DownloadState =
-  | "idle"
-  | "preparing"
-  | "downloading"
-  | "complete"
-  | "open_install_ready"
-  | "unavailable"
-  | "blocked"
-  | "network_error"
-  | "invalid_apk_response"
-  | "cors_limited"
-  | "manual_download_required";
+export type { DownloadState } from "../utils/downloadState";
 
 function getInitialState(): DownloadState {
-  if (sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true") {
-    // Honest: in-memory Blob is always lost after refresh/navigation
-    return "manual_download_required";
-  }
   return "idle";
+}
+
+function isFetchBlockedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("cors") ||
+    msg.includes("load failed")
+  );
 }
 
 export function useApkDownload() {
@@ -46,52 +46,38 @@ export function useApkDownload() {
     total: null,
     percent: null,
   });
-  const [message, setMessage] = useState(() =>
-    sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true"
-      ? "APK was downloaded earlier — open Downloads to install. (In-memory file not available after refresh.)"
-      : "",
-  );
-  const [showInstallHint, setShowInstallHint] = useState(
-    () => sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true",
-  );
+  const [message, setMessage] = useState("");
   const [hasBlobInMemory, setHasBlobInMemory] = useState(false);
-  const [browserDownloadStarted, setBrowserDownloadStarted] = useState(
-    () => sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true",
-  );
   const blobRef = useRef<Blob | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
   const browser = getBrowserProfile();
 
-  const markFetchComplete = useCallback((blob: Blob) => {
+  const markVerifiedComplete = useCallback((blob: Blob) => {
     blobRef.current = blob;
     setHasBlobInMemory(true);
-    setBrowserDownloadStarted(true);
-    sessionStorage.setItem(SESSION_DOWNLOADED_KEY, "true");
-    sessionStorage.setItem(SESSION_METHOD_KEY, "fetch-blob");
-    setState("open_install_ready");
-    setMessage("Download complete");
-    setShowInstallHint(true);
+    sessionStorage.setItem(SESSION_VERIFIED_KEY, "true");
+    setState("install_handoff");
+    setMessage("Download complete — tap OPEN / INSTALL for install steps.");
   }, []);
 
-  const markBrowserHandoff = useCallback((method: "native-anchor" | "navigation") => {
+  const startBrowserHandoff = useCallback(() => {
     blobRef.current = null;
     setHasBlobInMemory(false);
-    setBrowserDownloadStarted(true);
-    sessionStorage.setItem(SESSION_DOWNLOADED_KEY, "true");
-    sessionStorage.setItem(SESSION_METHOD_KEY, method);
-    setState("manual_download_required");
+    setProgress({ loaded: 0, total: null, percent: null });
+    setState("browser_handoff");
     setMessage(
-      `Download started — check your notification shade, then tap ${APK_CONFIG.fileName}.`,
+      `Download started in ${browser.label} — check your notification shade for ${APK_CONFIG.fileName}. This page cannot detect when the browser finishes.`,
     );
-    setShowInstallHint(true);
-  }, []);
+  }, [browser.label]);
 
   const startDownload = useCallback(
     async (options: { manual?: boolean; auto?: boolean } = {}) => {
       if (busyRef.current) return;
+
       if (
-        sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true" &&
+        sessionStorage.getItem(SESSION_VERIFIED_KEY) === "true" &&
+        hasBlobInMemory &&
         !options.manual
       ) {
         return;
@@ -102,24 +88,24 @@ export function useApkDownload() {
       abortRef.current = new AbortController();
 
       const url = resolveApkUrl();
-      setState("preparing");
+      setState("starting");
       setMessage("Preparing download…");
       setProgress({ loaded: 0, total: null, percent: null });
-      setShowInstallHint(false);
 
       try {
         const probe = await probeApkAvailability(url);
         if (!probe.valid) {
           if (probe.reason.includes("404") || probe.reason.includes("not found")) {
             setState("unavailable");
-            setMessage(
-              "APK not connected yet. Upload to public/downloads/osmani-tv.apk or set externalUrl (Bunny CDN recommended).",
-            );
-          } else if (probe.reason.includes("HTML") || probe.reason.includes("mismatch")) {
-            setState("invalid_apk_response");
+            setMessage("APK unavailable at the configured URL.");
+          } else if (
+            probe.reason.includes("HTML") ||
+            probe.reason.includes("mismatch")
+          ) {
+            setState("error");
             setMessage(probe.reason);
           } else {
-            setState("network_error");
+            setState("error");
             setMessage(probe.reason);
           }
           return;
@@ -133,67 +119,97 @@ export function useApkDownload() {
           return;
         }
 
+        const onProgress = (p: DownloadProgress) => {
+          setProgress(p);
+          if (p.total !== null && p.percent !== null) {
+            setMessage(formatProgressLabel(p.loaded, p.total, p.percent));
+          } else if (p.total !== null) {
+            setMessage(formatProgressLabel(p.loaded, p.total, null));
+          } else {
+            setMessage("Downloading…");
+          }
+        };
+
         setState("downloading");
         setMessage("Downloading…");
 
-        const sameOrigin = isSameOriginApk(url);
+        try {
+          const result = await downloadApkWithProgress(
+            url,
+            onProgress,
+            abortRef.current.signal,
+          );
 
-        if (sameOrigin) {
-          try {
-            const result = await downloadApkWithProgress(
-              url,
-              setProgress,
-              abortRef.current.signal,
-            );
-            saveBlobToDevice(result.blob!, APK_CONFIG.fileName);
-            setState("complete");
-            markFetchComplete(result.blob!);
-            return;
-          } catch (error) {
-            const msg =
-              error instanceof Error ? error.message : "Download failed";
-            if (msg.includes("HTML") || msg.includes("Invalid APK") || msg.includes("mismatch")) {
-              setState("invalid_apk_response");
+          setState("verifying");
+          setMessage("Verifying download…");
+
+          saveBlobToDevice(result.blob!, APK_CONFIG.fileName);
+          setState("completed");
+          markVerifiedComplete(result.blob!);
+          return;
+        } catch (fetchError) {
+          if (
+            !isSameOriginApk(url) &&
+            isFetchBlockedError(fetchError) &&
+            !options.manual
+          ) {
+            // Expected without Bunny CORS — fall through to browser handoff
+          } else if (
+            !isSameOriginApk(url) &&
+            isFetchBlockedError(fetchError) &&
+            options.manual
+          ) {
+            // manual retry still falls to browser path below
+          } else if (fetchError instanceof Error) {
+            const msg = fetchError.message;
+            if (
+              msg.includes("HTML") ||
+              msg.includes("Invalid APK") ||
+              msg.includes("mismatch") ||
+              msg.includes("SHA-256")
+            ) {
+              setState("error");
+              setMessage(msg);
+              return;
+            }
+            if (!isSameOriginApk(url)) {
+              // fall through to browser handoff
+            } else {
+              setState("error");
               setMessage(msg);
               return;
             }
           }
-        } else {
-          setState("cors_limited");
-          setMessage("Downloading via browser (progress unavailable)…");
         }
 
         if (browser.isMetaInApp) {
           triggerNavigationDownload(url);
-          markBrowserHandoff("navigation");
+          startBrowserHandoff();
           return;
         }
 
         if (browser.isSamsungInternet) {
           triggerNavigationDownload(url);
-          markBrowserHandoff("navigation");
+          startBrowserHandoff();
           return;
         }
 
         triggerNativeDownload(url, APK_CONFIG.fileName);
-        markBrowserHandoff("native-anchor");
+        startBrowserHandoff();
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Download failed";
         if (options.auto) {
           setState("blocked");
           setMessage("Automatic download blocked — tap Download");
-        } else if (msg.includes("fetch") || msg.includes("Network")) {
-          setState("network_error");
-          setMessage(msg);
         } else {
-          setState("manual_download_required");
+          setState("error");
           setMessage(msg);
         }
       } finally {
         busyRef.current = false;
       }
     },
-    [browser, markBrowserHandoff, markFetchComplete],
+    [browser, hasBlobInMemory, markVerifiedComplete, startBrowserHandoff],
   );
 
   const startDownloadRef = useRef(startDownload);
@@ -203,74 +219,57 @@ export function useApkDownload() {
   }, [startDownload]);
 
   const handleOpenInstall = useCallback(() => {
-    const result = getInstallInstructions(
-      hasBlobInMemory,
-      browserDownloadStarted,
-    );
-    setShowInstallHint(true);
+    if (!isVerifiedCompleteState(state) || !blobRef.current) {
+      return;
+    }
+    const result = getInstallInstructions(true, true);
     setMessage(result.message);
-  }, [hasBlobInMemory, browserDownloadStarted]);
+  }, [state]);
 
   const handleShareApk = useCallback(async () => {
-    if (!blobRef.current) {
+    if (!blobRef.current) return;
+    const result = await shareApkFile(blobRef.current);
+    setMessage(result.message);
+  }, []);
+
+  const handlePrimaryAction = useCallback(() => {
+    if (isVerifiedCompleteState(state)) {
       handleOpenInstall();
       return;
     }
-    const result = await shareApkFile(blobRef.current);
-    setMessage(result.message);
-    setShowInstallHint(true);
-  }, [handleOpenInstall]);
-
-  const handlePrimaryAction = useCallback(() => {
-    if (
-      state === "open_install_ready" ||
-      state === "complete" ||
-      state === "manual_download_required"
-    ) {
-      handleOpenInstall();
+    if (state === "browser_handoff") {
+      void startDownload({ manual: true });
       return;
     }
     void startDownload({ manual: true });
   }, [handleOpenInstall, startDownload, state]);
 
   const handleDownloadAgain = useCallback(() => {
-    sessionStorage.removeItem(SESSION_DOWNLOADED_KEY);
-    sessionStorage.removeItem(SESSION_METHOD_KEY);
+    sessionStorage.removeItem(SESSION_VERIFIED_KEY);
     blobRef.current = null;
     setHasBlobInMemory(false);
-    setBrowserDownloadStarted(false);
     void startDownload({ manual: true });
   }, [startDownload]);
+
+  const handleCancel = useCallback(() => {
+    abortRef.current?.abort();
+    setState("cancelled");
+    setMessage("Download cancelled.");
+    busyRef.current = false;
+  }, []);
 
   useEffect(() => {
     if (sessionStorage.getItem(SESSION_AUTO_KEY) === "true") return;
     if (isBackForwardNavigation()) return;
-    if (sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true") return;
 
     sessionStorage.setItem(SESSION_AUTO_KEY, "true");
     void startDownloadRef.current({ auto: true });
   }, []);
 
-  useEffect(() => {
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (
-        event.persisted &&
-        sessionStorage.getItem(SESSION_DOWNLOADED_KEY) === "true"
-      ) {
-        setHasBlobInMemory(false);
-        blobRef.current = null;
-        setState("manual_download_required");
-        setMessage(
-          "Download completed earlier — open Downloads to install. (In-memory file not available.)",
-        );
-        setShowInstallHint(true);
-      }
-    };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
-  }, []);
+  const canShareApk =
+    hasBlobInMemory && isVerifiedCompleteState(state) && browser.supportsWebShareFiles;
 
-  const canShareApk = hasBlobInMemory && browser.supportsWebShareFiles;
+  const showInstallHint = isVerifiedCompleteState(state);
 
   return {
     state,
@@ -279,12 +278,12 @@ export function useApkDownload() {
     browserLabel: browser.label,
     showInstallHint,
     hasBlobInMemory,
-    browserDownloadStarted,
     canShareApk,
     isMetaInApp: browser.isMetaInApp,
     handlePrimaryAction,
     handleDownloadAgain,
     handleOpenInstall,
     handleShareApk,
+    handleCancel,
   };
 }
