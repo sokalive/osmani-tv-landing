@@ -1,5 +1,4 @@
 import { APK_CONFIG, resolveApkUrl } from "../config/download";
-import { openNativeInstallBridge } from "../config/installBridge";
 import type { BrowserProfile } from "./browser";
 import {
   selectInstallHandoffPlan,
@@ -49,7 +48,6 @@ export function hasPersistedArtifactToDownloads(): boolean {
 }
 
 export type InstallHandoffOptions = {
-  installRoute?: boolean;
   browserFetchComplete?: boolean;
 };
 
@@ -226,21 +224,6 @@ async function executeHandoffStep(
   const shareAvailable = blob ? isShareAvailableForApk(blob) : false;
 
   switch (step) {
-    case "native-app-bridge": {
-      openNativeInstallBridge();
-      return {
-        tier: 1,
-        targetTier: plan.targetTier,
-        action: "native-app-bridge",
-        blobInMemory: blob != null,
-        browserDownloadStarted: false,
-        shareAvailable,
-        packageInstallerAvailable: false,
-        message:
-          "Opening Osmani TV to download and install via the Android package installer.",
-      };
-    }
-
     case "cdn-navigation": {
       triggerNavigationDownload(APK_CONFIG.externalUrl ?? resolveApkUrl());
       return {
@@ -357,7 +340,6 @@ export async function attemptInstallHandoff(
   options: InstallHandoffOptions = {},
 ): Promise<InstallHandoffResult> {
   const plan = selectInstallHandoffPlan(profile, {
-    installRoute: options.installRoute,
     browserFetchComplete: options.browserFetchComplete,
   });
 
@@ -368,7 +350,6 @@ export async function attemptInstallHandoff(
     if (
       result.action === "instructions-only" ||
       result.action === "web-share" ||
-      result.action === "native-app-bridge" ||
       result.action === "cdn-navigation" ||
       result.action === "anchor-browser-download" ||
       (result.action === "blob-anchor-open" && !artifactSavedViaAnchor)

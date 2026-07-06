@@ -59,9 +59,9 @@ describe("apkDownload install handoff", () => {
     expect(hasPersistedArtifactToDownloads()).toBe(true);
   });
 
-  it("native-app-bridge on install route without blob", async () => {
-    vi.stubGlobal("window", { location: { href: "" } });
-    vi.stubGlobal("navigator", { userAgent: "Android Chrome" });
+  it("uses cdn-navigation on Android without verified blob", async () => {
+    const assignSpy = vi.fn();
+    vi.stubGlobal("window", { location: { assign: assignSpy, href: "" } });
     const result = await attemptInstallHandoff(
       null,
       {
@@ -75,10 +75,10 @@ describe("apkDownload install handoff", () => {
         supportsWebShareFiles: false,
         label: "Chrome",
       },
-      { installRoute: true },
     );
-    expect(result.action).toBe("native-app-bridge");
+    expect(result.action).toBe("cdn-navigation");
     expect(result.tier).toBe(1);
+    expect(assignSpy).toHaveBeenCalled();
   });
 
   it("fetch completion path does not save via anchor", () => {

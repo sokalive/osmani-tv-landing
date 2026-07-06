@@ -1,19 +1,17 @@
 /**
- * Install handoff tier model and strategy selection.
+ * Install handoff tier model — landing-only / browser paths.
  *
- * Tier 1 — Real Android Package Installer (Cancel / Install) via native app bridge
- * Tier 2 — Browser anchor download save (NOT Android DownloadManager API)
- * Tier 3 — Blob URL open attempt
+ * Tier 1 — OS-recognized browser download (direct CDN navigation)
+ * Tier 2 — Verified fetch + programmatic anchor save (NOT Android DownloadManager)
+ * Tier 3 — Blob URL open attempt / Web Share
  * Tier 4 — Instructions only
  */
 
 import type { BrowserProfile } from "./browser";
-import { isInstallRoute } from "../config/installBridge";
 
 export type InstallHandoffTier = 1 | 2 | 3 | 4;
 
 export type InstallHandoffAction =
-  | "native-app-bridge"
   | "web-share"
   | "anchor-browser-download"
   | "blob-anchor-open"
@@ -28,32 +26,22 @@ export type InstallHandoffPlan = {
 
 export function selectInstallHandoffPlan(
   profile: BrowserProfile,
-  options: { installRoute?: boolean; browserFetchComplete?: boolean } = {},
+  options: { browserFetchComplete?: boolean } = {},
 ): InstallHandoffPlan {
-  const installRoute = options.installRoute ?? isInstallRoute();
-
   if (profile.isMetaInApp) {
     return {
-      targetTier: 4,
-      steps: installRoute ? ["cdn-navigation"] : ["instructions-only"],
+      targetTier: 1,
+      steps: ["cdn-navigation"],
       tier1Limitation:
-        "Meta in-app browsers block reliable APK install handoff; open in Chrome.",
+        "Open in Chrome for the strongest install path. Tap Download to start the APK in your browser.",
     };
   }
 
   if (profile.isAndroid) {
-    if (installRoute) {
-      return {
-        targetTier: 1,
-        steps: ["native-app-bridge", "cdn-navigation"],
-        tier1Limitation: "",
-      };
-    }
-
     if (!options.browserFetchComplete) {
       return {
         targetTier: 1,
-        steps: ["native-app-bridge"],
+        steps: ["cdn-navigation"],
         tier1Limitation: "",
       };
     }
@@ -69,7 +57,7 @@ export function selectInstallHandoffPlan(
       targetTier: 2,
       steps,
       tier1Limitation:
-        "Verified APK is in browser memory only; anchor download saves one local copy for the browser download UI.",
+        "Verified APK is in browser memory; anchor download saves one local copy for the browser download UI.",
     };
   }
 
@@ -83,9 +71,9 @@ export function selectInstallHandoffPlan(
 export function tierLabel(tier: InstallHandoffTier): string {
   switch (tier) {
     case 1:
-      return "Package Installer via native bridge";
+      return "Browser OS download";
     case 2:
-      return "Browser download save";
+      return "Browser anchor download save";
     case 3:
       return "Blob open attempt";
     case 4:

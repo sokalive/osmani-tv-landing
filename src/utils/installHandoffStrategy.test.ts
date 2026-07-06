@@ -18,16 +18,22 @@ function profile(overrides: Partial<BrowserProfile>): BrowserProfile {
 }
 
 describe("selectInstallHandoffPlan", () => {
-  it("install route targets native bridge first", () => {
+  it("Chrome Android uses CDN navigation for OS download", () => {
     const plan = selectInstallHandoffPlan(
       profile({ isAndroid: true, isChrome: true }),
-      { installRoute: true },
     );
     expect(plan.targetTier).toBe(1);
-    expect(plan.steps[0]).toBe("native-app-bridge");
+    expect(plan.steps).toEqual(["cdn-navigation"]);
   });
 
-  it("after browser fetch uses anchor save not native bridge", () => {
+  it("Meta IAB uses CDN navigation after external browser path", () => {
+    const plan = selectInstallHandoffPlan(
+      profile({ isAndroid: true, isMetaInApp: true, isFacebook: true }),
+    );
+    expect(plan.steps).toEqual(["cdn-navigation"]);
+  });
+
+  it("after verified fetch uses anchor save not CDN navigation", () => {
     const plan = selectInstallHandoffPlan(
       profile({ isAndroid: true, isChrome: true }),
       { browserFetchComplete: true },
