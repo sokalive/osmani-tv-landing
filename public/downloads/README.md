@@ -1,36 +1,38 @@
-# APK hosting slot
+# Osmani TV APK slot
 
-Place the production Osmani TV APK here:
+Place the production APK here:
 
 ```
 public/downloads/osmani-tv.apk
 ```
 
-It will be served at:
+Served at:
 
 ```
 https://osmani-tv-landing.vercel.app/downloads/osmani-tv.apk
 ```
 
-## Recommended for large APKs (~90 MB)
+Download filename presented to users: **Osmani-TV-Max.apk** (configured in `vercel.json` Content-Disposition).
 
-Do **not** commit large APK files to Git. Instead:
+## Large APKs (~90 MB)
 
-1. Upload the APK to object storage (AWS S3, Cloudflare R2, Bunny CDN, etc.)
-2. Set the CDN URL in `src/config/download.ts`:
+Do **not** commit large APKs to Git. Use external CDN instead:
 
 ```ts
-externalUrl: "https://your-cdn.example.com/osmani-tv.apk",
+// src/config/download.ts
+externalUrl: "https://your-cdn.example.com/Osmani-TV-Max.apk",
 ```
 
-When `externalUrl` is set, it overrides the local path.
-
-## Verify
-
-After uploading, confirm availability:
+## Verify after upload
 
 ```bash
 curl -I https://osmani-tv-landing.vercel.app/downloads/osmani-tv.apk
 ```
 
-Expect `HTTP/200` when the file is present.
+Expect:
+
+- `HTTP/2 200`
+- `Content-Type: application/vnd.android.package-archive`
+- **Not** `text/html`
+
+Do not add fake `.apk` files (renamed text, empty files, etc.).

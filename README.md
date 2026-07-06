@@ -1,62 +1,57 @@
 # Osmani TV Landing Page
 
-Production React + Vite landing page for direct APK distribution, optimized for Meta (Facebook/Instagram) ad traffic.
+**Production:** https://osmani-tv-landing.vercel.app  
+**Repository:** https://github.com/sokalive/osmani-tv-landing
 
-**Production URL:** https://osmani-tv-landing.vercel.app
+Direct APK distribution landing page (React + Vite), optimized for Meta ad traffic.
 
-## Quick Start
+## Owner checklist
+
+### 1. Upload real APK
+
+```
+public/downloads/osmani-tv.apk
+```
+
+Or set CDN URL in `src/config/download.ts` → `externalUrl`
+
+### 2. Upload real visual assets
+
+```
+public/assets/osmani/app-icon.png
+public/assets/osmani/screenshot-01.png … screenshot-05.png
+public/assets/osmani/feature-graphic.png
+public/assets/osmani/social-preview-1200x630.png
+```
+
+See `public/assets/osmani/README.md` for dimensions.
+
+### 3. Update Open Graph image (after social preview upload)
+
+In `index.html`, set `og:image` to:
+`https://osmani-tv-landing.vercel.app/assets/osmani/social-preview-1200x630.png`
+
+## Development
 
 ```bash
 npm install
 npm run dev
+npm run build
+npm run lint
 ```
 
-## APK Configuration
+## Architecture
 
-Edit `src/config/download.ts`:
+| Config | Purpose |
+|--------|---------|
+| `src/config/download.ts` | APK URL, filename, package ID |
+| `src/config/assets.ts` | All image paths (single source) |
+| `src/config/constants.ts` | App copy, SEO, neutral stats |
 
-```ts
-export const APK_CONFIG = {
-  localPath: "/downloads/osmani-tv.apk",
-  externalUrl: "", // Set CDN URL for large APKs (~90 MB)
-  fileName: "osmani-tv.apk",
-  version: "2.4.1",
-  size: "90 MB",
-  packageId: "com.burudanitv.app",
-};
-```
-
-### Upload the real APK
-
-**Option A — Same-origin (small APKs / testing)**
-
-Place the file at `public/downloads/osmani-tv.apk`
-
-**Option B — External CDN (recommended for ~90 MB)**
-
-Set `externalUrl` to your object-storage/CDN URL. Do not commit large APKs to Git.
-
-See `public/downloads/README.md` for details.
-
-## Features
-
-- Automatic APK download on first visit (once per session)
-- Manual Download fallback when auto-download is blocked
-- Real byte-level progress when same-origin + Content-Length available
-- OPEN / INSTALL handoff via Web Share API (Android) with instructional fallback
-- App-store-style mobile-first UI (white background)
-- Meta in-app browser, Chrome, and Samsung Internet fallbacks
-- No Play Store redirect — visitors stay on the landing page
-
-## Deploy to Vercel
-
-1. Push to `sokalive/osmani-tv-landing` on `master`
-2. Vercel auto-deploys from GitHub
-3. Framework: **Vite** · Build: `npm run build` · Output: `dist`
-
-## Build
+## Verify APK route (after upload)
 
 ```bash
-npm run build
-npm run preview
+curl -I https://osmani-tv-landing.vercel.app/downloads/osmani-tv.apk
 ```
+
+Must return `application/vnd.android.package-archive`, **not** `text/html`.

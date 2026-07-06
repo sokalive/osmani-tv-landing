@@ -16,6 +16,8 @@ function App() {
     progress,
     message,
     showInstallHint,
+    hasBlobInMemory,
+    isMetaInApp,
     handlePrimaryAction,
     handleDownloadAgain,
   } = useApkDownload();
@@ -32,6 +34,8 @@ function App() {
             progress={progress}
             message={message}
             showInstallHint={showInstallHint}
+            hasBlobInMemory={hasBlobInMemory}
+            isMetaInApp={isMetaInApp}
             onPrimaryClick={handlePrimaryAction}
             onDownloadAgain={handleDownloadAgain}
           />

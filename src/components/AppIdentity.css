@@ -5,11 +5,15 @@
   padding: 0.5rem 0 1rem;
 }
 
-.app-identity__icon svg {
-  width: 72px;
-  height: 72px;
+.app-identity__icon {
   flex-shrink: 0;
+  border-radius: 18px;
+  overflow: hidden;
   box-shadow: 0 1px 3px rgba(60, 64, 67, 0.2);
+}
+
+.app-identity__icon-img,
+.app-identity__icon .asset-image__placeholder {
   border-radius: 18px;
 }
 
@@ -37,9 +41,9 @@
 }
 
 @media (min-width: 768px) {
-  .app-identity__icon svg {
-    width: 96px;
-    height: 96px;
+  .app-identity__icon {
+    width: 96px !important;
+    height: 96px !important;
   }
 
   .app-identity__title {
