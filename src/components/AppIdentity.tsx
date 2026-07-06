@@ -1,10 +1,10 @@
 import { APP_CONFIG } from "../config/constants";
-import "./AppHeader.css";
+import "./AppIdentity.css";
 
-export function AppHeader() {
+export function AppIdentity() {
   return (
-    <header className="app-header">
-      <div className="app-header__logo" aria-hidden="true">
+    <section className="app-identity">
+      <div className="app-identity__icon" aria-hidden="true">
         <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect width="80" height="80" rx="18" fill="url(#logoGrad)" />
           <path
@@ -20,11 +20,13 @@ export function AppHeader() {
           </defs>
         </svg>
       </div>
-      <div className="app-header__info">
-        <h1 className="app-header__title">{APP_CONFIG.name}</h1>
-        <p className="app-header__category">{APP_CONFIG.category}</p>
-        <p className="app-header__tagline">{APP_CONFIG.tagline}</p>
+      <div className="app-identity__info">
+        <p className="app-identity__developer">{APP_CONFIG.developer}</p>
+        <h1 className="app-identity__title">{APP_CONFIG.name}</h1>
+        {APP_CONFIG.inAppPurchases && (
+          <p className="app-identity__meta">In-app purchases</p>
+        )}
       </div>
-    </header>
+    </section>
   );
 }

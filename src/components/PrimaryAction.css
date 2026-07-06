@@ -1,0 +1,126 @@
+.primary-action {
+  padding: 1rem 0 0.5rem;
+}
+
+.primary-action__buttons {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.primary-action__btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.primary-action__btn:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+.primary-action__btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.primary-action__btn.secondary {
+  flex: 0 1 auto;
+  background: #fff;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+}
+
+.primary-action__btn--install {
+  background: var(--color-primary);
+  font-weight: 600;
+}
+
+.primary-action__progress {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.primary-action__progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.primary-action__progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.primary-action__progress-bar--indeterminate .primary-action__progress-fill--indeterminate {
+  width: 40% !important;
+  animation: indeterminate 1.2s ease-in-out infinite;
+}
+
+.primary-action__progress-text {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  min-width: 2.5rem;
+}
+
+.primary-action__message {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.primary-action__message--blocked {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.primary-action__hint {
+  margin-top: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: var(--color-surface);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+.primary-action__hint p {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.primary-action__hint em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+@media (min-width: 768px) {
+  .primary-action__buttons {
+    max-width: 420px;
+  }
+}

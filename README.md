@@ -1,6 +1,8 @@
 # Osmani TV Landing Page
 
-A production-ready React + Vite landing page for Osmani TV, optimized for Google Play Store redirects and Meta (Facebook/Instagram) ad traffic.
+Production React + Vite landing page for direct APK distribution, optimized for Meta (Facebook/Instagram) ad traffic.
+
+**Production URL:** https://osmani-tv-landing.vercel.app
 
 ## Quick Start
 
@@ -9,34 +11,48 @@ npm install
 npm run dev
 ```
 
-## Configuration
+## APK Configuration
 
-Update the Play Store URL in `src/config/constants.ts`:
+Edit `src/config/download.ts`:
 
 ```ts
-export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.burudanitv.app";
+export const APK_CONFIG = {
+  localPath: "/downloads/osmani-tv.apk",
+  externalUrl: "", // Set CDN URL for large APKs (~90 MB)
+  fileName: "osmani-tv.apk",
+  version: "2.4.1",
+  size: "90 MB",
+  packageId: "com.burudanitv.app",
+};
 ```
 
-Also update `SEO.siteUrl` in the same file to match your production domain.
+### Upload the real APK
+
+**Option A — Same-origin (small APKs / testing)**
+
+Place the file at `public/downloads/osmani-tv.apk`
+
+**Option B — External CDN (recommended for ~90 MB)**
+
+Set `externalUrl` to your object-storage/CDN URL. Do not commit large APKs to Git.
+
+See `public/downloads/README.md` for details.
 
 ## Features
 
-- Auto-redirect to Google Play Store after 1 second on first visit
-- Landing page remains visible when user returns via browser back button
-- Google Play Store-inspired responsive UI
-- SEO, Open Graph, and Twitter Card metadata
-- Vercel-ready deployment
+- Automatic APK download on first visit (once per session)
+- Manual Download fallback when auto-download is blocked
+- Real byte-level progress when same-origin + Content-Length available
+- OPEN / INSTALL handoff via Web Share API (Android) with instructional fallback
+- App-store-style mobile-first UI (white background)
+- Meta in-app browser, Chrome, and Samsung Internet fallbacks
+- No Play Store redirect — visitors stay on the landing page
 
 ## Deploy to Vercel
 
-1. Push this repository to GitHub
-2. Go to [vercel.com](https://vercel.com) and import the repository
-3. Framework preset: **Vite**
-4. Build command: `npm run build`
-5. Output directory: `dist`
-6. Deploy
-
-No additional environment variables required.
+1. Push to `sokalive/osmani-tv-landing` on `master`
+2. Vercel auto-deploys from GitHub
+3. Framework: **Vite** · Build: `npm run build` · Output: `dist`
 
 ## Build
 

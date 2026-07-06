@@ -1,51 +1,59 @@
-import { AppHeader } from "./components/AppHeader";
-import { DownloadButton } from "./components/DownloadButton";
-import { FAQSection } from "./components/FAQSection";
-import { FeaturesSection } from "./components/FeaturesSection";
-import { Footer } from "./components/Footer";
-import { LoadingScreen } from "./components/LoadingScreen";
-import { RatingSection } from "./components/RatingSection";
+import { TopBar } from "./components/TopBar";
+import { AppIdentity } from "./components/AppIdentity";
+import { StatsRow } from "./components/StatsRow";
+import { PrimaryAction } from "./components/PrimaryAction";
 import { ScreenshotCarousel } from "./components/ScreenshotCarousel";
-import { StatsSection } from "./components/StatsSection";
-import { useAutoRedirect } from "./hooks/useAutoRedirect";
+import { AboutSection } from "./components/AboutSection";
+import { CategoryChips } from "./components/CategoryChips";
+import { WhatsNew } from "./components/WhatsNew";
+import { AppInfo } from "./components/AppInfo";
+import { useApkDownload } from "./hooks/useApkDownload";
 import "./App.css";
 
 function App() {
-  const { isRedirecting } = useAutoRedirect();
+  const {
+    state,
+    progress,
+    message,
+    showInstallHint,
+    handlePrimaryAction,
+    handleDownloadAgain,
+  } = useApkDownload();
 
   return (
-    <>
-      {isRedirecting && <LoadingScreen />}
-
-      <div className={`app ${isRedirecting ? "app--hidden" : ""}`}>
+    <div className="app">
+      <div className="app__page">
+        <TopBar />
         <main className="app__main">
-          <div className="app__hero">
-            <AppHeader />
-            <div className="app__cta">
-              <DownloadButton />
-            </div>
-            <RatingSection />
-          </div>
+          <AppIdentity />
+          <StatsRow />
+          <PrimaryAction
+            state={state}
+            progress={progress}
+            message={message}
+            showInstallHint={showInstallHint}
+            onPrimaryClick={handlePrimaryAction}
+            onDownloadAgain={handleDownloadAgain}
+          />
+          <p className="app__install-note">
+            Download on phone. Android 6.0 or later required.
+          </p>
 
           <ScreenshotCarousel />
-          <StatsSection />
-
-          <div id="features">
-            <FeaturesSection />
-          </div>
-
-          <div id="faq">
-            <FAQSection />
-          </div>
-
-          <div className="app__cta app__cta--bottom">
-            <DownloadButton />
-          </div>
+          <AboutSection />
+          <CategoryChips />
+          <WhatsNew />
+          <AppInfo />
         </main>
 
-        <Footer />
+        <footer className="app__footer">
+          <p>Osmani TV · Direct APK download</p>
+          <p className="app__footer-note">
+            This is not Google Play. Distributed directly by Osmani Media.
+          </p>
+        </footer>
       </div>
-    </>
+    </div>
   );
 }
 
