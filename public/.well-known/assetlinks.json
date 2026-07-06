@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.burudanitv.app",
+      "sha256_cert_fingerprints": [
+        "C7:89:61:8C:AB:C7:01:61:5F:1E:56:A0:62:3E:CF:80:54:1F:0F:62:71:48:98:CB:69:08:9F:06:26:C8:20:6B"
+      ]
+    }
+  }
+]
