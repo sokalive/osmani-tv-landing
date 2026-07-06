@@ -3,7 +3,7 @@ import { APK_CONFIG, isSameOriginApk, resolveApkUrl } from "../config/download";
 import {
   attemptInstallHandoff,
   downloadApkWithProgress,
-  revokeInstallObjectUrl,
+  resetInstallHandoffState,
   shareApkFile,
   triggerNativeDownload,
   triggerNavigationDownload,
@@ -91,7 +91,7 @@ export function useApkDownload() {
     if (!isActiveDownloadAttempt(attemptId)) return;
 
     blobRef.current = null;
-    revokeInstallObjectUrl();
+    resetInstallHandoffState();
     setHasBlobInMemory(false);
     setProgress({ loaded: 0, total: null, percent: null });
     setState("browser_handoff");
@@ -116,6 +116,8 @@ export function useApkDownload() {
       const { attemptId, signal } = began;
       const url = resolveApkUrl();
       let bytesReceived = 0;
+
+      resetInstallHandoffState();
 
       setState("starting");
       setMessage("Preparing download…");
@@ -177,7 +179,7 @@ export function useApkDownload() {
           if (!isActiveDownloadAttempt(attemptId)) return;
 
           if (bytesReceived > 0) {
-            revokeInstallObjectUrl();
+            resetInstallHandoffState();
             blobRef.current = null;
             setHasBlobInMemory(false);
             sessionStorage.removeItem(SESSION_VERIFIED_KEY);
@@ -187,7 +189,7 @@ export function useApkDownload() {
           }
 
           if (isValidationError(fetchError)) {
-            revokeInstallObjectUrl();
+            resetInstallHandoffState();
             blobRef.current = null;
             setHasBlobInMemory(false);
             sessionStorage.removeItem(SESSION_VERIFIED_KEY);
@@ -275,7 +277,7 @@ export function useApkDownload() {
 
   const handleDownloadAgain = useCallback(() => {
     sessionStorage.removeItem(SESSION_VERIFIED_KEY);
-    revokeInstallObjectUrl();
+    resetInstallHandoffState();
     blobRef.current = null;
     setHasBlobInMemory(false);
     void startDownload({ manual: true, forceRetry: true });
@@ -283,7 +285,7 @@ export function useApkDownload() {
 
   const handleCancel = useCallback(() => {
     cancelActiveDownloadAttempt();
-    revokeInstallObjectUrl();
+    resetInstallHandoffState();
     blobRef.current = null;
     setHasBlobInMemory(false);
     sessionStorage.removeItem(SESSION_VERIFIED_KEY);

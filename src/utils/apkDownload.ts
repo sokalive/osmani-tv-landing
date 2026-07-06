@@ -1,6 +1,12 @@
 import { APK_CONFIG } from "../config/download";
 import type { BrowserProfile } from "./browser";
 import {
+  selectInstallHandoffPlan,
+  tierLabel,
+  type InstallHandoffAction,
+  type InstallHandoffTier,
+} from "./installHandoffStrategy";
+import {
   isHtmlContentType,
   validateApkBlob,
   validateApkSha256,
@@ -17,16 +23,12 @@ export type DownloadResult = {
   method: "fetch-blob" | "native-anchor" | "navigation";
 };
 
-export type InstallHandoffAction =
-  | "blob-anchor-open"
-  | "blob-navigation"
-  | "web-share"
-  | "instructions-only";
-
 export type InstallHandoffResult = {
+  tier: InstallHandoffTier;
+  targetTier: InstallHandoffTier;
   action: InstallHandoffAction;
   blobInMemory: boolean;
-  /** True only when a second browser download manager entry was intentionally started */
+  /** True when Download Manager received a persisted copy (RAM→disk, not CDN) */
   browserDownloadStarted: boolean;
   shareAvailable: boolean;
   packageInstallerAvailable: false;
@@ -34,6 +36,16 @@ export type InstallHandoffResult = {
 };
 
 let retainedInstallObjectUrl: string | null = null;
+let artifactPersistedToDownloads = false;
+
+export function resetInstallHandoffState(): void {
+  revokeInstallObjectUrl();
+  artifactPersistedToDownloads = false;
+}
+
+export function hasPersistedArtifactToDownloads(): boolean {
+  return artifactPersistedToDownloads;
+}
 
 export function revokeInstallObjectUrl(): void {
   if (retainedInstallObjectUrl) {
@@ -137,12 +149,13 @@ export function triggerNavigationDownload(url: string): DownloadResult {
 }
 
 /**
- * Persists a verified blob to the browser download manager.
- * Only call from explicit user install handoff when in-memory open paths fail —
- * never after fetch completion (that duplicates the CDN download).
+ * Writes verified in-memory APK bytes to the browser Download Manager.
+ * Does not re-fetch from CDN. Used for OS-level install handoff (Tier 2).
  */
-export function saveBlobToDevice(blob: Blob, fileName: string): void {
-  const objectUrl = URL.createObjectURL(blob);
+export function persistVerifiedBlobToDownloads(blob: Blob, fileName: string): void {
+  const objectUrl = URL.createObjectURL(
+    new Blob([blob], { type: "application/vnd.android.package-archive" }),
+  );
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
   anchor.download = fileName;
@@ -152,6 +165,11 @@ export function saveBlobToDevice(blob: Blob, fileName: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
+/** @deprecated Use persistVerifiedBlobToDownloads — kept for test compatibility */
+export function saveBlobToDevice(blob: Blob, fileName: string): void {
+  persistVerifiedBlobToDownloads(blob, fileName);
 }
 
 export function isShareAvailableForApk(blob: Blob): boolean {
@@ -176,89 +194,172 @@ function openBlobWithAnchor(objectUrl: string): void {
   document.body.removeChild(anchor);
 }
 
+function persistOnce(blob: Blob): boolean {
+  if (artifactPersistedToDownloads) return false;
+  persistVerifiedBlobToDownloads(blob, APK_CONFIG.fileName);
+  artifactPersistedToDownloads = true;
+  return true;
+}
+
+async function executeHandoffStep(
+  step: InstallHandoffAction,
+  blob: Blob,
+  profile: BrowserProfile,
+  plan: ReturnType<typeof selectInstallHandoffPlan>,
+): Promise<InstallHandoffResult | null> {
+  const shareAvailable = isShareAvailableForApk(blob);
+
+  switch (step) {
+    case "web-share": {
+      if (!shareAvailable) return null;
+      const file = new File([blob], APK_CONFIG.fileName, {
+        type: "application/vnd.android.package-archive",
+      });
+      try {
+        await navigator.share({ files: [file], title: APK_CONFIG.fileName });
+        return {
+          tier: 1,
+          targetTier: plan.targetTier,
+          action: "web-share",
+          blobInMemory: true,
+          browserDownloadStarted: false,
+          shareAvailable: true,
+          packageInstallerAvailable: false,
+          message:
+            "Android share sheet opened. If Package Installer appears, choose it to reach Cancel / Install.",
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    case "persist-to-downloads": {
+      const firstPersist = persistOnce(blob);
+      return {
+        tier: 2,
+        targetTier: plan.targetTier,
+        action: "persist-to-downloads",
+        blobInMemory: true,
+        browserDownloadStarted: true,
+        shareAvailable,
+        packageInstallerAvailable: false,
+        message: firstPersist
+          ? `APK handed to Android Downloads. Tap the ${profile.label} download notification for ${APK_CONFIG.fileName} — that opens the real Cancel / Install installer.`
+          : `APK is already in Downloads. Tap the ${profile.label} download notification or open Downloads and tap ${APK_CONFIG.fileName}.`,
+      };
+    }
+
+    case "blob-anchor-open": {
+      try {
+        openBlobWithAnchor(getOrCreateInstallObjectUrl(blob));
+        return {
+          tier: 3,
+          targetTier: plan.targetTier,
+          action: "blob-anchor-open",
+          blobInMemory: true,
+          browserDownloadStarted: artifactPersistedToDownloads,
+          shareAvailable,
+          packageInstallerAvailable: false,
+          message:
+            "Attempted blob open. If no installer appeared, use the download notification or Downloads folder.",
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    case "blob-navigation": {
+      if (!profile.isAndroid) return null;
+      try {
+        window.location.assign(getOrCreateInstallObjectUrl(blob));
+        return {
+          tier: 3,
+          targetTier: plan.targetTier,
+          action: "blob-navigation",
+          blobInMemory: true,
+          browserDownloadStarted: artifactPersistedToDownloads,
+          shareAvailable,
+          packageInstallerAvailable: false,
+          message: "Opening APK…",
+        };
+      } catch {
+        return null;
+      }
+    }
+
+    case "instructions-only":
+      return {
+        tier: 4,
+        targetTier: plan.targetTier,
+        action: "instructions-only",
+        blobInMemory: true,
+        browserDownloadStarted: artifactPersistedToDownloads,
+        shareAvailable,
+        packageInstallerAvailable: false,
+        message: plan.tier1Limitation,
+      };
+  }
+}
+
 export function getInstallInstructionsFallback(
   blobInMemory: boolean,
 ): InstallHandoffResult {
-  const message = blobInMemory
-    ? `If the Android installer did not open, check your notification shade or Downloads folder for ${APK_CONFIG.fileName}, or use Share APK below.`
-    : "Download the APK first, then open your notification shade or Downloads folder to install.";
-
   return {
+    tier: 4,
+    targetTier: 4,
     action: "instructions-only",
     blobInMemory,
-    browserDownloadStarted: false,
+    browserDownloadStarted: artifactPersistedToDownloads,
     shareAvailable: false,
     packageInstallerAvailable: false,
-    message,
+    message: blobInMemory
+      ? `Open Downloads or your notification shade and tap ${APK_CONFIG.fileName}.`
+      : "Download the APK first.",
   };
 }
 
 /**
- * Strongest validated install handoff from a verified in-memory APK blob.
- * Must run inside a user gesture (button tap). Does not start a CDN re-download.
+ * Strongest install handoff from verified in-memory APK.
+ * Must run under user gesture. Never re-fetches CDN bytes.
  */
 export async function attemptInstallHandoff(
   blob: Blob,
   profile: BrowserProfile,
 ): Promise<InstallHandoffResult> {
-  const objectUrl = getOrCreateInstallObjectUrl(blob);
-  const shareAvailable = isShareAvailableForApk(blob);
+  const plan = selectInstallHandoffPlan(profile);
 
-  try {
-    openBlobWithAnchor(objectUrl);
-    return {
-      action: "blob-anchor-open",
-      blobInMemory: true,
-      browserDownloadStarted: false,
-      shareAvailable,
-      packageInstallerAvailable: false,
-      message:
-        "Attempting to open the Android package installer. If nothing happens, try Share APK or open Downloads.",
-    };
-  } catch {
-    // fall through
-  }
+  for (const step of plan.steps) {
+    const result = await executeHandoffStep(step, blob, profile, plan);
+    if (!result) continue;
 
-  if (profile.isAndroid) {
-    try {
-      window.location.assign(objectUrl);
-      return {
-        action: "blob-navigation",
-        blobInMemory: true,
-        browserDownloadStarted: false,
-        shareAvailable,
-        packageInstallerAvailable: false,
-        message: "Opening APK for install…",
-      };
-    } catch {
-      // fall through
+    // Web-share may achieve Tier 1 if user picks installer; persist achieves Tier 2.
+    // Stop after first successful initiation unless instructions-only.
+    if (result.action === "instructions-only") {
+      return result;
+    }
+    if (result.action === "web-share") {
+      return result;
+    }
+    if (result.action === "persist-to-downloads") {
+      return result;
+    }
+    if (result.action === "blob-anchor-open" && !artifactPersistedToDownloads) {
+      return result;
     }
   }
 
-  if (shareAvailable) {
-    const file = new File([blob], APK_CONFIG.fileName, {
-      type: "application/vnd.android.package-archive",
-    });
-    try {
-      await navigator.share({ files: [file], title: APK_CONFIG.fileName });
-      return {
-        action: "web-share",
-        blobInMemory: true,
-        browserDownloadStarted: false,
-        shareAvailable: true,
-        packageInstallerAvailable: false,
-        message:
-          "Share sheet opened. Choose a package installer or file manager if offered.",
-      };
-    } catch {
-      // user dismissed share sheet
-    }
-  }
-
-  return getInstallInstructionsFallback(true);
+  return {
+    tier: 4,
+    targetTier: plan.targetTier,
+    action: "instructions-only",
+    blobInMemory: true,
+    browserDownloadStarted: artifactPersistedToDownloads,
+    shareAvailable: isShareAvailableForApk(blob),
+    packageInstallerAvailable: false,
+    message: `${plan.tier1Limitation} Highest achievable: ${tierLabel(plan.targetTier)}.`,
+  };
 }
 
-/** Optional secondary action — opens share chooser, NOT package installer */
 export async function shareApkFile(blob: Blob): Promise<InstallHandoffResult> {
   if (!isShareAvailableForApk(blob)) {
     return getInstallInstructionsFallback(true);
@@ -269,13 +370,15 @@ export async function shareApkFile(blob: Blob): Promise<InstallHandoffResult> {
   try {
     await navigator.share({ files: [file], title: APK_CONFIG.fileName });
     return {
+      tier: 1,
+      targetTier: 2,
       action: "web-share",
       blobInMemory: true,
-      browserDownloadStarted: false,
+      browserDownloadStarted: artifactPersistedToDownloads,
       shareAvailable: true,
       packageInstallerAvailable: false,
       message:
-        "Share sheet opened. If an installer or file manager appears, select it.",
+        "Share sheet opened. Choose Package Installer if listed.",
     };
   } catch {
     return getInstallInstructionsFallback(true);

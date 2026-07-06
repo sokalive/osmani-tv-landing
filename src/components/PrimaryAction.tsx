@@ -128,9 +128,9 @@ export function PrimaryAction({
           </ol>
           {hasBlobInMemory && (
             <p className="primary-action__hint-note">
-              OPEN / INSTALL attempts to hand the verified APK to Android&apos;s
-              package installer. If that does not open, use Share APK or your
-              Downloads folder.
+              OPEN / INSTALL hands the verified APK to Android (Downloads
+              notification or share sheet). Tap the download notification to
+              reach the real Cancel / Install screen.
             </p>
           )}
           {canShareApk && onShareApk && (
