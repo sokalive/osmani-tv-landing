@@ -109,10 +109,8 @@ export function PrimaryAction({
 
       {browserHandoff && (
         <p className="primary-action__hint-note primary-action__message">
-          Download is handled by your browser. This page cannot show byte
-          progress or confirm completion without CDN CORS. Check your
-          notification shade, then tap <em>{APK_CONFIG.fileName}</em> to
-          install.
+          Download is handled by your browser. Check your notification shade,
+          then tap <em>{APK_CONFIG.fileName}</em> to install.
         </p>
       )}
 
@@ -130,8 +128,9 @@ export function PrimaryAction({
           </ol>
           {hasBlobInMemory && (
             <p className="primary-action__hint-note">
-              OPEN / INSTALL shows install steps. JavaScript cannot launch the
-              Android package installer directly.
+              OPEN / INSTALL attempts to hand the verified APK to Android&apos;s
+              package installer. If that does not open, use Share APK or your
+              Downloads folder.
             </p>
           )}
           {canShareApk && onShareApk && (

@@ -1,4 +1,4 @@
-# Download flow — platform capabilities (investigated 2026-07-06)
+# Download flow — platform capabilities (updated 2026-07-06)
 
 ## Verified from this repository / CDN tests
 
@@ -6,49 +6,50 @@
 |------------|--------|
 | Bunny CDN GET + Content-Length | Yes (90,834,935 bytes) |
 | Bunny CDN Accept-Ranges | Yes |
-| Bunny CDN CORS | **No** `Access-Control-Allow-Origin` |
-| Browser fetch progress cross-origin | **Impossible without CORS** |
+| Bunny CDN CORS | Yes — `Access-Control-Allow-Origin: *` |
+| Browser fetch progress cross-origin | Yes (owner physical-device evidence) |
 | HEAD from server (curl/PowerShell) | 200 |
-| OPTIONS preflight | 405 |
+| OPTIONS preflight | 405 (GET/HEAD sufficient) |
+
+## Duplicate-download fix (2026-07-06)
+
+**Root cause:** After streaming the APK via `fetch`, `saveBlobToDevice()` triggered a second browser download (`Osmani TV Mx (1).apk`).
+
+**Fix:** Verified blob stays in page memory only. `saveBlobToDevice` is never called on fetch completion. OPEN / INSTALL uses blob URL anchor open (no `download` attribute) under user gesture.
 
 ## Android / browser — cannot be done from a normal HTTPS page
 
 | Claim | Reality |
 |-------|---------|
-| Auto-launch Package Installer after download | **No** — blocked by Android security |
-| Open local Downloads file via JS | **No** — no file path access |
-| `intent://` to installed APK on disk | **No** — cannot reference browser download path |
+| Auto-launch Package Installer without user gesture | **No** |
+| Open local Downloads file path via JS | **No** |
+| `intent://` to browser-downloaded file on disk | **No** |
 | `file://` APK URI | **Blocked** |
-| File System Access API for install | **Not available** on Android Chrome for this flow |
-| Service worker tracking browser download completion | **No** — SW does not see download manager events |
-| Know native anchor download finished | **No** — opaque to JavaScript |
+| Detect native browser download completion | **No** |
 
-## Possible with user gesture after verified fetch (requires CORS)
+## Possible with CORS + verified fetch
 
 | Capability | Status |
-|------------|---------|
-| Stream APK with real byte progress | Yes, if Bunny adds CORS |
-| Verify size + SHA-256 in page | Yes, after full fetch |
-| Save blob via `<a download>` | Yes |
-| `navigator.share({ files })` | Share sheet only — **not** guaranteed installer |
+|------------|--------|
+| Stream APK with real byte progress | Yes |
+| Verify size + SHA-256 in page | Yes |
+| Blob in memory for install handoff | Yes |
+| Blob anchor open (no download attr) on user tap | **Attempted** — may open installer on some Android browsers |
+| `navigator.share({ files })` | Share sheet — fallback only |
 
 ## MIME type
 
-Bunny returns `application/octet-stream`. `application/vnd.android.package-archive` may improve handling but **does not enable auto-installer** from the web page. Configure on Bunny if desired.
+Bunny returns `application/octet-stream`. Recommended Bunny change:
 
-## Memory
+- Set Content-Type to `application/vnd.android.package-archive` for `.apk` files
+- Optional: `Content-Disposition: attachment; filename="Osmani TV Mx.apk"`
 
-Buffering 90,834,935 bytes as a Blob on low-memory Android may cause tab pressure. Trade-off for real progress + verification. Browser-managed download avoids page memory use.
+This may improve Android recognition but does not guarantee installer launch from the web page.
 
-## Current production path (no CORS)
+## Architecture
 
-1. Try fetch → fails CORS
-2. Fall back to native `<a download>` / navigation
-3. UI state: `browser_handoff` — button stays **Download**, no OPEN / INSTALL, no fake progress
-
-## Path after Bunny CORS is configured
-
-1. Fetch stream with Content-Length
-2. Show real % and MB
-3. Verify bytes + SHA-256
-4. State: `install_handoff` → **OPEN / INSTALL** (instructions only; user opens notification/Downloads)
+1. Auto-start once (module + sessionStorage guards, StrictMode-safe)
+2. Single-flight coordinator — one fetch attempt at a time
+3. Stream → verify size + SHA-256 → `install_handoff`
+4. OPEN / INSTALL → `attemptInstallHandoff(blob)` (blob URL open, then share, then instructions)
+5. Native CDN download fallback only when fetch fails with zero bytes received

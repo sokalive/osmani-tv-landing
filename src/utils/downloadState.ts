@@ -35,25 +35,23 @@ export function isBrowserHandoffState(state: DownloadState): boolean {
 export function getPrimaryButtonLabel(state: DownloadState): string {
   switch (state) {
     case "starting":
-      return "Preparing download…";
+      return "STARTING…";
     case "downloading":
-      return "Downloading…";
+      return "DOWNLOADING…";
     case "verifying":
-      return "Verifying…";
+      return "VERIFYING…";
     case "completed":
     case "install_handoff":
       return "OPEN / INSTALL";
     case "browser_handoff":
-      return "Download";
     case "blocked":
     case "error":
-      return "Download";
     case "cancelled":
-      return "Download";
+      return "DOWNLOAD";
     case "unavailable":
       return "Unavailable";
     default:
-      return "Download";
+      return "DOWNLOAD";
   }
 }
 

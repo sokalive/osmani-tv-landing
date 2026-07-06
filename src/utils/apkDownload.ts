@@ -1,4 +1,5 @@
 import { APK_CONFIG } from "../config/download";
+import type { BrowserProfile } from "./browser";
 import {
   isHtmlContentType,
   validateApkBlob,
@@ -16,20 +17,39 @@ export type DownloadResult = {
   method: "fetch-blob" | "native-anchor" | "navigation";
 };
 
-/** Separated install handoff concepts — never merge into one fake state */
+export type InstallHandoffAction =
+  | "blob-anchor-open"
+  | "blob-navigation"
+  | "web-share"
+  | "instructions-only";
+
 export type InstallHandoffResult = {
-  /** What the browser actually did */
-  action: "instructions-only" | "share-chooser-offered";
-  /** Whether APK bytes are still in page memory */
+  action: InstallHandoffAction;
   blobInMemory: boolean;
-  /** Whether browser download manager received the file */
+  /** True only when a second browser download manager entry was intentionally started */
   browserDownloadStarted: boolean;
-  /** Web Share API with files is available (not installer) */
   shareAvailable: boolean;
-  /** Package installer cannot be launched from JavaScript */
   packageInstallerAvailable: false;
   message: string;
 };
+
+let retainedInstallObjectUrl: string | null = null;
+
+export function revokeInstallObjectUrl(): void {
+  if (retainedInstallObjectUrl) {
+    URL.revokeObjectURL(retainedInstallObjectUrl);
+    retainedInstallObjectUrl = null;
+  }
+}
+
+function getOrCreateInstallObjectUrl(blob: Blob): string {
+  if (!retainedInstallObjectUrl) {
+    retainedInstallObjectUrl = URL.createObjectURL(
+      new Blob([blob], { type: "application/vnd.android.package-archive" }),
+    );
+  }
+  return retainedInstallObjectUrl;
+}
 
 export async function downloadApkWithProgress(
   url: string,
@@ -48,7 +68,9 @@ export async function downloadApkWithProgress(
   }
 
   const contentLength = response.headers.get("content-length");
-  const total = contentLength ? parseInt(contentLength, 10) : null;
+  const total = contentLength
+    ? parseInt(contentLength, 10)
+    : APK_CONFIG.expectedSizeBytes;
 
   if (total !== null && total < APK_CONFIG.minBytes) {
     throw new Error(`Invalid APK response: file too small (${total} bytes)`);
@@ -114,6 +136,11 @@ export function triggerNavigationDownload(url: string): DownloadResult {
   return { blob: null, method: "navigation" };
 }
 
+/**
+ * Persists a verified blob to the browser download manager.
+ * Only call from explicit user install handoff when in-memory open paths fail —
+ * never after fetch completion (that duplicates the CDN download).
+ */
 export function saveBlobToDevice(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -138,40 +165,103 @@ export function isShareAvailableForApk(blob: Blob): boolean {
   );
 }
 
-/**
- * Default OPEN / INSTALL action: instructions only.
- * Does NOT use navigator.share unless explicitly requested via shareApkFile().
- */
-export function getInstallInstructions(
-  blobInMemory: boolean,
-  browserDownloadStarted: boolean,
-): InstallHandoffResult {
-  const shareAvailable = blobInMemory ? false : false; // computed separately when needed
+function openBlobWithAnchor(objectUrl: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.type = "application/vnd.android.package-archive";
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
 
-  let message: string;
-  if (blobInMemory && browserDownloadStarted) {
-    message = `Your APK download completed. Open your notification shade or Downloads folder, then tap ${APK_CONFIG.fileName}. Allow installs from this browser if Android asks.`;
-  } else if (browserDownloadStarted) {
-    message = `The APK was sent to your browser download manager. Open your notification shade or Downloads folder, then tap ${APK_CONFIG.fileName} to install.`;
-  } else {
-    message =
-      "Download the APK first, then open your notification shade or Downloads folder to install.";
-  }
+export function getInstallInstructionsFallback(
+  blobInMemory: boolean,
+): InstallHandoffResult {
+  const message = blobInMemory
+    ? `If the Android installer did not open, check your notification shade or Downloads folder for ${APK_CONFIG.fileName}, or use Share APK below.`
+    : "Download the APK first, then open your notification shade or Downloads folder to install.";
 
   return {
     action: "instructions-only",
     blobInMemory,
-    browserDownloadStarted,
-    shareAvailable,
+    browserDownloadStarted: false,
+    shareAvailable: false,
     packageInstallerAvailable: false,
     message,
   };
 }
 
+/**
+ * Strongest validated install handoff from a verified in-memory APK blob.
+ * Must run inside a user gesture (button tap). Does not start a CDN re-download.
+ */
+export async function attemptInstallHandoff(
+  blob: Blob,
+  profile: BrowserProfile,
+): Promise<InstallHandoffResult> {
+  const objectUrl = getOrCreateInstallObjectUrl(blob);
+  const shareAvailable = isShareAvailableForApk(blob);
+
+  try {
+    openBlobWithAnchor(objectUrl);
+    return {
+      action: "blob-anchor-open",
+      blobInMemory: true,
+      browserDownloadStarted: false,
+      shareAvailable,
+      packageInstallerAvailable: false,
+      message:
+        "Attempting to open the Android package installer. If nothing happens, try Share APK or open Downloads.",
+    };
+  } catch {
+    // fall through
+  }
+
+  if (profile.isAndroid) {
+    try {
+      window.location.assign(objectUrl);
+      return {
+        action: "blob-navigation",
+        blobInMemory: true,
+        browserDownloadStarted: false,
+        shareAvailable,
+        packageInstallerAvailable: false,
+        message: "Opening APK for install…",
+      };
+    } catch {
+      // fall through
+    }
+  }
+
+  if (shareAvailable) {
+    const file = new File([blob], APK_CONFIG.fileName, {
+      type: "application/vnd.android.package-archive",
+    });
+    try {
+      await navigator.share({ files: [file], title: APK_CONFIG.fileName });
+      return {
+        action: "web-share",
+        blobInMemory: true,
+        browserDownloadStarted: false,
+        shareAvailable: true,
+        packageInstallerAvailable: false,
+        message:
+          "Share sheet opened. Choose a package installer or file manager if offered.",
+      };
+    } catch {
+      // user dismissed share sheet
+    }
+  }
+
+  return getInstallInstructionsFallback(true);
+}
+
 /** Optional secondary action — opens share chooser, NOT package installer */
 export async function shareApkFile(blob: Blob): Promise<InstallHandoffResult> {
   if (!isShareAvailableForApk(blob)) {
-    return getInstallInstructions(true, true);
+    return getInstallInstructionsFallback(true);
   }
   const file = new File([blob], APK_CONFIG.fileName, {
     type: "application/vnd.android.package-archive",
@@ -179,15 +269,15 @@ export async function shareApkFile(blob: Blob): Promise<InstallHandoffResult> {
   try {
     await navigator.share({ files: [file], title: APK_CONFIG.fileName });
     return {
-      action: "share-chooser-offered",
+      action: "web-share",
       blobInMemory: true,
-      browserDownloadStarted: true,
+      browserDownloadStarted: false,
       shareAvailable: true,
       packageInstallerAvailable: false,
       message:
-        "Share sheet opened. If an installer or file manager appears, select it. Otherwise use your Downloads folder.",
+        "Share sheet opened. If an installer or file manager appears, select it.",
     };
   } catch {
-    return getInstallInstructions(true, true);
+    return getInstallInstructionsFallback(true);
   }
 }

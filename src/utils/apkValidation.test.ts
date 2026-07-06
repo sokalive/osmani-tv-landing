@@ -64,7 +64,31 @@ describe("validateApkHead", () => {
 });
 
 describe("probeApkAvailability", () => {
-  it("trusts configured cross-origin CDN without browser CORS", async () => {
+  it("uses HEAD when CORS allows cross-origin probe", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === "content-type") return "application/octet-stream";
+          if (name === "content-length") return "90834935";
+          return null;
+        },
+      },
+    }) as unknown as typeof fetch;
+
+    const r = await probeApkAvailability(
+      "https://osmani-tv-apk-download.b-cdn.net/Osmani%20TV%20Mx.apk",
+    );
+    expect(r.valid).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://osmani-tv-apk-download.b-cdn.net/Osmani%20TV%20Mx.apk",
+      { method: "HEAD", cache: "no-store" },
+    );
+  });
+
+  it("falls back to configured CDN metadata when HEAD fails", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("CORS blocked")) as unknown as typeof fetch;
+
     const r = await probeApkAvailability(
       "https://osmani-tv-apk-download.b-cdn.net/Osmani%20TV%20Mx.apk",
     );
