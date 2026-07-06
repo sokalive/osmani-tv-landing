@@ -128,9 +128,9 @@ export function PrimaryAction({
           </ol>
           {hasBlobInMemory && (
             <p className="primary-action__hint-note">
-              OPEN / INSTALL hands the verified APK to Android (Downloads
-              notification or share sheet). Tap the download notification to
-              reach the real Cancel / Install screen.
+              OPEN / INSTALL opens Osmani TV when installed (real Android
+              installer). Otherwise saves via browser download — tap the
+              download item, then confirm Cancel / Install.
             </p>
           )}
           {canShareApk && onShareApk && (

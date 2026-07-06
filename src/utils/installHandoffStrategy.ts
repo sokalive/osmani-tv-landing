@@ -1,59 +1,75 @@
 /**
  * Install handoff tier model and strategy selection.
  *
- * Tier 1 — Real Android Package Installer (Cancel / Install)
- * Tier 2 — OS download notification / system surface → one tap to installer
- * Tier 3 — Downloads / file manager to APK location
- * Tier 4 — Browser-only instructions / share fallback
+ * Tier 1 — Real Android Package Installer (Cancel / Install) via native app bridge
+ * Tier 2 — Browser anchor download save (NOT Android DownloadManager API)
+ * Tier 3 — Blob URL open attempt
+ * Tier 4 — Instructions only
  */
 
 import type { BrowserProfile } from "./browser";
+import { isInstallRoute } from "../config/installBridge";
 
 export type InstallHandoffTier = 1 | 2 | 3 | 4;
 
 export type InstallHandoffAction =
+  | "native-app-bridge"
   | "web-share"
-  | "persist-to-downloads"
+  | "anchor-browser-download"
   | "blob-anchor-open"
-  | "blob-navigation"
+  | "cdn-navigation"
   | "instructions-only";
 
 export type InstallHandoffPlan = {
-  /** Highest tier this environment can target */
   targetTier: InstallHandoffTier;
-  /** Ordered steps to attempt under user gesture */
   steps: InstallHandoffAction[];
-  /** Why Tier 1 is not achievable in pure web for this profile */
   tier1Limitation: string;
 };
 
-export function selectInstallHandoffPlan(profile: BrowserProfile): InstallHandoffPlan {
+export function selectInstallHandoffPlan(
+  profile: BrowserProfile,
+  options: { installRoute?: boolean; browserFetchComplete?: boolean } = {},
+): InstallHandoffPlan {
+  const installRoute = options.installRoute ?? isInstallRoute();
+
   if (profile.isMetaInApp) {
     return {
       targetTier: 4,
-      steps: ["instructions-only"],
+      steps: installRoute ? ["cdn-navigation"] : ["instructions-only"],
       tier1Limitation:
         "Meta in-app browsers block reliable APK install handoff; open in Chrome.",
     };
   }
 
   if (profile.isAndroid) {
-    const steps: InstallHandoffAction[] = [];
+    if (installRoute) {
+      return {
+        targetTier: 1,
+        steps: ["native-app-bridge", "cdn-navigation"],
+        tier1Limitation: "",
+      };
+    }
 
+    if (!options.browserFetchComplete) {
+      return {
+        targetTier: 1,
+        steps: ["native-app-bridge"],
+        tier1Limitation: "",
+      };
+    }
+
+    const steps: InstallHandoffAction[] = [];
     if (profile.supportsWebShareFiles) {
       steps.push("web-share");
     }
-
-    // Persist verified RAM blob to Download Manager — zero additional CDN bytes.
-    // Chrome/Samsung typically surface a completion notification → Package Installer.
-    steps.push("persist-to-downloads");
+    steps.push("anchor-browser-download");
     steps.push("blob-anchor-open");
 
     return {
       targetTier: 2,
       steps,
       tier1Limitation:
-        "Fetch-to-RAM leaves no content:// URI; Package Installer requires OS-owned file or native FileProvider bridge.",
+        "Verified APK is in browser memory only; anchor download saves one local copy for the browser download UI.",
     };
   }
 
@@ -67,11 +83,11 @@ export function selectInstallHandoffPlan(profile: BrowserProfile): InstallHandof
 export function tierLabel(tier: InstallHandoffTier): string {
   switch (tier) {
     case 1:
-      return "Package Installer";
+      return "Package Installer via native bridge";
     case 2:
-      return "OS download notification";
+      return "Browser download save";
     case 3:
-      return "Downloads folder";
+      return "Blob open attempt";
     case 4:
       return "Instructions only";
   }

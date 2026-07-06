@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { APK_CONFIG, isSameOriginApk, resolveApkUrl } from "../config/download";
 import {
+  hasAttemptedInstallBridge,
+  isInstallRoute,
+} from "../config/installBridge";
+import {
   attemptInstallHandoff,
   downloadApkWithProgress,
   resetInstallHandoffState,
@@ -67,6 +71,7 @@ export function useApkDownload() {
   const [hasBlobInMemory, setHasBlobInMemory] = useState(false);
   const blobRef = useRef<Blob | null>(null);
   const browser = getBrowserProfile();
+  const installRoute = isInstallRoute();
 
   useEffect(() => {
     if (
@@ -100,8 +105,35 @@ export function useApkDownload() {
     );
   }, [browser.label]);
 
+  const startInstallRoute = useCallback(async () => {
+    if (!installRoute) return;
+
+    if (!hasAttemptedInstallBridge()) {
+      setState("starting");
+      setMessage("Opening Osmani TV installer…");
+      const result = await attemptInstallHandoff(null, browser, {
+        installRoute: true,
+      });
+      setMessage(result.message);
+      setState("install_handoff");
+      return;
+    }
+
+    setState("starting");
+    setMessage("Starting browser APK download…");
+    const result = await attemptInstallHandoff(null, browser, {
+      installRoute: true,
+    });
+    setState("browser_handoff");
+    setMessage(result.message);
+  }, [browser, installRoute]);
+
   const startDownload = useCallback(
     async (options: { manual?: boolean; auto?: boolean; forceRetry?: boolean } = {}) => {
+      if (installRoute) {
+        void startInstallRoute();
+        return;
+      }
       if (
         !options.forceRetry &&
         sessionStorage.getItem(SESSION_VERIFIED_KEY) === "true" &&
@@ -244,7 +276,7 @@ export function useApkDownload() {
         endDownloadAttempt(attemptId);
       }
     },
-    [browser, markVerifiedComplete, startBrowserHandoff],
+    [browser, installRoute, markVerifiedComplete, startBrowserHandoff, startInstallRoute],
   );
 
   const startDownloadRef = useRef(startDownload);
@@ -257,7 +289,9 @@ export function useApkDownload() {
     if (!isVerifiedCompleteState(state) || !blobRef.current) {
       return;
     }
-    const result = await attemptInstallHandoff(blobRef.current, browser);
+    const result = await attemptInstallHandoff(blobRef.current, browser, {
+      browserFetchComplete: true,
+    });
     setMessage(result.message);
   }, [browser, state]);
 
@@ -293,14 +327,26 @@ export function useApkDownload() {
     setMessage("Download cancelled.");
   }, []);
 
+  const startInstallRouteRef = useRef(startInstallRoute);
+
+  useEffect(() => {
+    startInstallRouteRef.current = startInstallRoute;
+  }, [startInstallRoute]);
+
   useEffect(() => {
     if (sessionStorage.getItem(SESSION_AUTO_KEY) === "true") return;
     if (isBackForwardNavigation()) return;
     if (!consumeModuleAutoStart()) return;
 
     sessionStorage.setItem(SESSION_AUTO_KEY, "true");
+    if (installRoute) {
+      queueMicrotask(() => {
+        void startInstallRouteRef.current();
+      });
+      return;
+    }
     void startDownloadRef.current({ auto: true });
-  }, []);
+  }, [installRoute]);
 
   const canShareApk =
     hasBlobInMemory && isVerifiedCompleteState(state) && browser.supportsWebShareFiles;

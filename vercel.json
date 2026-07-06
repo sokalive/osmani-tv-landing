@@ -1,6 +1,15 @@
 {
   "headers": [
     {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
       "source": "/downloads/(.*\\.apk)",
       "headers": [
         {
@@ -37,7 +46,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!downloads/|assets/).*)",
+      "source": "/((?!downloads/|assets/|\\.well-known/).*)",
       "destination": "/index.html"
     }
   ]

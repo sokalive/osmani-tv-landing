@@ -1,4 +1,5 @@
-import { APK_CONFIG } from "../config/download";
+import { APK_CONFIG, resolveApkUrl } from "../config/download";
+import { openNativeInstallBridge } from "../config/installBridge";
 import type { BrowserProfile } from "./browser";
 import {
   selectInstallHandoffPlan,
@@ -36,16 +37,21 @@ export type InstallHandoffResult = {
 };
 
 let retainedInstallObjectUrl: string | null = null;
-let artifactPersistedToDownloads = false;
+let artifactSavedViaAnchor = false;
 
 export function resetInstallHandoffState(): void {
   revokeInstallObjectUrl();
-  artifactPersistedToDownloads = false;
+  artifactSavedViaAnchor = false;
 }
 
 export function hasPersistedArtifactToDownloads(): boolean {
-  return artifactPersistedToDownloads;
+  return artifactSavedViaAnchor;
 }
+
+export type InstallHandoffOptions = {
+  installRoute?: boolean;
+  browserFetchComplete?: boolean;
+};
 
 export function revokeInstallObjectUrl(): void {
   if (retainedInstallObjectUrl) {
@@ -149,10 +155,11 @@ export function triggerNavigationDownload(url: string): DownloadResult {
 }
 
 /**
- * Writes verified in-memory APK bytes to the browser Download Manager.
- * Does not re-fetch from CDN. Used for OS-level install handoff (Tier 2).
+ * Saves verified in-memory APK via programmatic <a download> click.
+ * This uses the browser download API — NOT Android DownloadManager.
+ * Zero additional CDN bytes (RAM → browser download UI).
  */
-export function persistVerifiedBlobToDownloads(blob: Blob, fileName: string): void {
+export function saveVerifiedBlobViaAnchor(blob: Blob, fileName: string): void {
   const objectUrl = URL.createObjectURL(
     new Blob([blob], { type: "application/vnd.android.package-archive" }),
   );
@@ -167,9 +174,14 @@ export function persistVerifiedBlobToDownloads(blob: Blob, fileName: string): vo
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
-/** @deprecated Use persistVerifiedBlobToDownloads — kept for test compatibility */
+/** @deprecated Use saveVerifiedBlobViaAnchor */
+export function persistVerifiedBlobToDownloads(blob: Blob, fileName: string): void {
+  saveVerifiedBlobViaAnchor(blob, fileName);
+}
+
+/** @deprecated Use saveVerifiedBlobViaAnchor */
 export function saveBlobToDevice(blob: Blob, fileName: string): void {
-  persistVerifiedBlobToDownloads(blob, fileName);
+  saveVerifiedBlobViaAnchor(blob, fileName);
 }
 
 export function isShareAvailableForApk(blob: Blob): boolean {
@@ -194,24 +206,58 @@ function openBlobWithAnchor(objectUrl: string): void {
   document.body.removeChild(anchor);
 }
 
-function persistOnce(blob: Blob): boolean {
-  if (artifactPersistedToDownloads) return false;
-  persistVerifiedBlobToDownloads(blob, APK_CONFIG.fileName);
-  artifactPersistedToDownloads = true;
+export function hasSavedArtifactViaAnchor(): boolean {
+  return artifactSavedViaAnchor;
+}
+
+function saveViaAnchorOnce(blob: Blob): boolean {
+  if (artifactSavedViaAnchor) return false;
+  saveVerifiedBlobViaAnchor(blob, APK_CONFIG.fileName);
+  artifactSavedViaAnchor = true;
   return true;
 }
 
 async function executeHandoffStep(
   step: InstallHandoffAction,
-  blob: Blob,
+  blob: Blob | null,
   profile: BrowserProfile,
   plan: ReturnType<typeof selectInstallHandoffPlan>,
 ): Promise<InstallHandoffResult | null> {
-  const shareAvailable = isShareAvailableForApk(blob);
+  const shareAvailable = blob ? isShareAvailableForApk(blob) : false;
 
   switch (step) {
+    case "native-app-bridge": {
+      openNativeInstallBridge();
+      return {
+        tier: 1,
+        targetTier: plan.targetTier,
+        action: "native-app-bridge",
+        blobInMemory: blob != null,
+        browserDownloadStarted: false,
+        shareAvailable,
+        packageInstallerAvailable: false,
+        message:
+          "Opening Osmani TV to download and install via the Android package installer.",
+      };
+    }
+
+    case "cdn-navigation": {
+      triggerNavigationDownload(APK_CONFIG.externalUrl ?? resolveApkUrl());
+      return {
+        tier: 1,
+        targetTier: plan.targetTier,
+        action: "cdn-navigation",
+        blobInMemory: false,
+        browserDownloadStarted: true,
+        shareAvailable: false,
+        packageInstallerAvailable: false,
+        message:
+          "Downloading APK via your browser. Tap the download notification to open the Android installer.",
+      };
+    }
+
     case "web-share": {
-      if (!shareAvailable) return null;
+      if (!blob || !shareAvailable) return null;
       const file = new File([blob], APK_CONFIG.fileName, {
         type: "application/vnd.android.package-archive",
       });
@@ -233,23 +279,25 @@ async function executeHandoffStep(
       }
     }
 
-    case "persist-to-downloads": {
-      const firstPersist = persistOnce(blob);
+    case "anchor-browser-download": {
+      if (!blob) return null;
+      const firstSave = saveViaAnchorOnce(blob);
       return {
         tier: 2,
         targetTier: plan.targetTier,
-        action: "persist-to-downloads",
+        action: "anchor-browser-download",
         blobInMemory: true,
         browserDownloadStarted: true,
         shareAvailable,
         packageInstallerAvailable: false,
-        message: firstPersist
-          ? `APK handed to Android Downloads. Tap the ${profile.label} download notification for ${APK_CONFIG.fileName} — that opens the real Cancel / Install installer.`
-          : `APK is already in Downloads. Tap the ${profile.label} download notification or open Downloads and tap ${APK_CONFIG.fileName}.`,
+        message: firstSave
+          ? `APK saved via browser download. Tap the ${profile.label} download item for ${APK_CONFIG.fileName}, then confirm Cancel / Install.`
+          : `APK already saved. Open ${profile.label} downloads and tap ${APK_CONFIG.fileName}.`,
       };
     }
 
     case "blob-anchor-open": {
+      if (!blob) return null;
       try {
         openBlobWithAnchor(getOrCreateInstallObjectUrl(blob));
         return {
@@ -257,30 +305,11 @@ async function executeHandoffStep(
           targetTier: plan.targetTier,
           action: "blob-anchor-open",
           blobInMemory: true,
-          browserDownloadStarted: artifactPersistedToDownloads,
+          browserDownloadStarted: artifactSavedViaAnchor,
           shareAvailable,
           packageInstallerAvailable: false,
           message:
             "Attempted blob open. If no installer appeared, use the download notification or Downloads folder.",
-        };
-      } catch {
-        return null;
-      }
-    }
-
-    case "blob-navigation": {
-      if (!profile.isAndroid) return null;
-      try {
-        window.location.assign(getOrCreateInstallObjectUrl(blob));
-        return {
-          tier: 3,
-          targetTier: plan.targetTier,
-          action: "blob-navigation",
-          blobInMemory: true,
-          browserDownloadStarted: artifactPersistedToDownloads,
-          shareAvailable,
-          packageInstallerAvailable: false,
-          message: "Opening APK…",
         };
       } catch {
         return null;
@@ -293,7 +322,7 @@ async function executeHandoffStep(
         targetTier: plan.targetTier,
         action: "instructions-only",
         blobInMemory: true,
-        browserDownloadStarted: artifactPersistedToDownloads,
+        browserDownloadStarted: artifactSavedViaAnchor,
         shareAvailable,
         packageInstallerAvailable: false,
         message: plan.tier1Limitation,
@@ -309,7 +338,7 @@ export function getInstallInstructionsFallback(
     targetTier: 4,
     action: "instructions-only",
     blobInMemory,
-    browserDownloadStarted: artifactPersistedToDownloads,
+    browserDownloadStarted: artifactSavedViaAnchor,
     shareAvailable: false,
     packageInstallerAvailable: false,
     message: blobInMemory
@@ -323,27 +352,27 @@ export function getInstallInstructionsFallback(
  * Must run under user gesture. Never re-fetches CDN bytes.
  */
 export async function attemptInstallHandoff(
-  blob: Blob,
+  blob: Blob | null,
   profile: BrowserProfile,
+  options: InstallHandoffOptions = {},
 ): Promise<InstallHandoffResult> {
-  const plan = selectInstallHandoffPlan(profile);
+  const plan = selectInstallHandoffPlan(profile, {
+    installRoute: options.installRoute,
+    browserFetchComplete: options.browserFetchComplete,
+  });
 
   for (const step of plan.steps) {
     const result = await executeHandoffStep(step, blob, profile, plan);
     if (!result) continue;
 
-    // Web-share may achieve Tier 1 if user picks installer; persist achieves Tier 2.
-    // Stop after first successful initiation unless instructions-only.
-    if (result.action === "instructions-only") {
-      return result;
-    }
-    if (result.action === "web-share") {
-      return result;
-    }
-    if (result.action === "persist-to-downloads") {
-      return result;
-    }
-    if (result.action === "blob-anchor-open" && !artifactPersistedToDownloads) {
+    if (
+      result.action === "instructions-only" ||
+      result.action === "web-share" ||
+      result.action === "native-app-bridge" ||
+      result.action === "cdn-navigation" ||
+      result.action === "anchor-browser-download" ||
+      (result.action === "blob-anchor-open" && !artifactSavedViaAnchor)
+    ) {
       return result;
     }
   }
@@ -352,11 +381,11 @@ export async function attemptInstallHandoff(
     tier: 4,
     targetTier: plan.targetTier,
     action: "instructions-only",
-    blobInMemory: true,
-    browserDownloadStarted: artifactPersistedToDownloads,
-    shareAvailable: isShareAvailableForApk(blob),
+    blobInMemory: blob != null,
+    browserDownloadStarted: artifactSavedViaAnchor,
+    shareAvailable: blob ? isShareAvailableForApk(blob) : false,
     packageInstallerAvailable: false,
-    message: `${plan.tier1Limitation} Highest achievable: ${tierLabel(plan.targetTier)}.`,
+    message: plan.tier1Limitation || `Highest achievable: ${tierLabel(plan.targetTier)}.`,
   };
 }
 
@@ -374,7 +403,7 @@ export async function shareApkFile(blob: Blob): Promise<InstallHandoffResult> {
       targetTier: 2,
       action: "web-share",
       blobInMemory: true,
-      browserDownloadStarted: artifactPersistedToDownloads,
+      browserDownloadStarted: artifactSavedViaAnchor,
       shareAvailable: true,
       packageInstallerAvailable: false,
       message:

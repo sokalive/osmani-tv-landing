@@ -17,43 +17,8 @@ describe("apkDownload install handoff", () => {
     vi.restoreAllMocks();
   });
 
-  it("persists verified blob to Downloads on Android without CDN re-fetch", async () => {
+  it("uses anchor-browser-download on Android after verified fetch", async () => {
     const blob = new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])], {
-      type: "application/vnd.android.package-archive",
-    });
-    const clickSpy = vi.fn();
-    const anchor = { href: "", download: "", rel: "", style: { display: "" }, click: clickSpy };
-
-    vi.stubGlobal("document", {
-      createElement: () => anchor,
-      body: { appendChild: vi.fn(), removeChild: vi.fn() },
-    });
-    vi.stubGlobal("URL", {
-      createObjectURL: vi.fn(() => "blob:apk-test"),
-      revokeObjectURL: vi.fn(),
-    });
-
-    const result = await attemptInstallHandoff(blob, {
-      isAndroid: true,
-      isMetaInApp: false,
-      isInstagram: false,
-      isFacebook: false,
-      isChrome: true,
-      isSamsungInternet: false,
-      supportsAutoDownload: true,
-      supportsWebShareFiles: false,
-      label: "Chrome",
-    });
-
-    expect(result.action).toBe("persist-to-downloads");
-    expect(result.tier).toBe(2);
-    expect(result.browserDownloadStarted).toBe(true);
-    expect(clickSpy).toHaveBeenCalled();
-    expect(hasPersistedArtifactToDownloads()).toBe(true);
-  });
-
-  it("does not persist twice on repeated OPEN / INSTALL", async () => {
-    const blob = new Blob([new Uint8Array([0x50, 0x4b])], {
       type: "application/vnd.android.package-archive",
     });
     const clickSpy = vi.fn();
@@ -72,26 +37,52 @@ describe("apkDownload install handoff", () => {
       revokeObjectURL: vi.fn(),
     });
 
-    const profile = {
-      isAndroid: true,
-      isMetaInApp: false,
-      isInstagram: false,
-      isFacebook: false,
-      isChrome: true,
-      isSamsungInternet: false,
-      supportsAutoDownload: true,
-      supportsWebShareFiles: false,
-      label: "Chrome",
-    };
+    const result = await attemptInstallHandoff(
+      blob,
+      {
+        isAndroid: true,
+        isMetaInApp: false,
+        isInstagram: false,
+        isFacebook: false,
+        isChrome: true,
+        isSamsungInternet: false,
+        supportsAutoDownload: true,
+        supportsWebShareFiles: false,
+        label: "Chrome",
+      },
+      { browserFetchComplete: true },
+    );
 
-    await attemptInstallHandoff(blob, profile);
-    await attemptInstallHandoff(blob, profile);
-    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(result.action).toBe("anchor-browser-download");
+    expect(result.tier).toBe(2);
+    expect(clickSpy).toHaveBeenCalled();
+    expect(hasPersistedArtifactToDownloads()).toBe(true);
   });
 
-  it("fetch completion path does not call persist or saveBlob", () => {
+  it("native-app-bridge on install route without blob", async () => {
+    vi.stubGlobal("window", { location: { href: "" } });
+    vi.stubGlobal("navigator", { userAgent: "Android Chrome" });
+    const result = await attemptInstallHandoff(
+      null,
+      {
+        isAndroid: true,
+        isMetaInApp: false,
+        isInstagram: false,
+        isFacebook: false,
+        isChrome: true,
+        isSamsungInternet: false,
+        supportsAutoDownload: true,
+        supportsWebShareFiles: false,
+        label: "Chrome",
+      },
+      { installRoute: true },
+    );
+    expect(result.action).toBe("native-app-bridge");
+    expect(result.tier).toBe(1);
+  });
+
+  it("fetch completion path does not save via anchor", () => {
     const source = downloadApkWithProgress.toString();
-    expect(source).not.toContain("persistVerifiedBlobToDownloads");
-    expect(source).not.toContain("saveBlobToDevice");
+    expect(source).not.toContain("saveVerifiedBlobViaAnchor");
   });
 });
