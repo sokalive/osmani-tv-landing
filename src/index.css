@@ -5,14 +5,9 @@
 }
 
 :root {
-  --color-primary: #1a73e8;
-  --color-primary-dark: #1557b0;
-  --color-text: #202124;
-  --color-text-secondary: #5f6368;
-  --color-bg: #ffffff;
-  --color-surface: #f1f3f4;
-  --color-border: #dadce0;
-  --color-warning: #ea8600;
+  --color-primary: #1a6fe8;
+  --color-bg: #0a1428;
+  --color-text: #ffffff;
 
   font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -34,11 +29,13 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-bg);
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button {

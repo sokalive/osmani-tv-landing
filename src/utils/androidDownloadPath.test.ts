@@ -18,7 +18,7 @@ function profile(overrides: Partial<BrowserProfile>): BrowserProfile {
 }
 
 describe("selectAndroidDownloadPath", () => {
-  it("Chrome Android uses direct CDN navigation", () => {
+  it("Chrome Android uses direct CDN navigation only", () => {
     expect(
       selectAndroidDownloadPath(
         profile({ isAndroid: true, isChrome: true }),
@@ -42,19 +42,10 @@ describe("selectAndroidDownloadPath", () => {
     ).toBe("iab-external-browser");
   });
 
-  it("does not overlap fetch bytes with CDN navigation", () => {
-    expect(
-      selectAndroidDownloadPath(profile({ isAndroid: true, isChrome: true }), {
-        fetchBytesReceived: 1024,
-      }),
-    ).toBe("verified-fetch");
-  });
-
-  it("manual verified fetch when requested", () => {
-    expect(
-      selectAndroidDownloadPath(profile({ isAndroid: true, isChrome: true }), {
-        preferVerifiedFetch: true,
-      }),
-    ).toBe("verified-fetch");
+  it("never selects verified-fetch RAM path", () => {
+    const path = selectAndroidDownloadPath(
+      profile({ isAndroid: true, isChrome: true }),
+    );
+    expect(path).not.toBe("verified-fetch");
   });
 });

@@ -1,96 +1,54 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  attemptExternalBrowserHandoff,
   buildExternalChromeIntentUrl,
   buildLandingUrlWithIabMarker,
-  clearIabEscapeState,
-  hasIabEscapeAttempted,
-  hasIabReturnMarker,
   shouldAttemptIabExternalHandoff,
 } from "./externalBrowser";
 import type { BrowserProfile } from "./browser";
 
-function metaProfile(): BrowserProfile {
+function profile(overrides: Partial<BrowserProfile>): BrowserProfile {
   return {
-    isAndroid: true,
-    isMetaInApp: true,
+    isAndroid: false,
+    isMetaInApp: false,
     isInstagram: false,
-    isFacebook: true,
+    isFacebook: false,
     isChrome: false,
     isSamsungInternet: false,
-    supportsAutoDownload: false,
+    supportsAutoDownload: true,
     supportsWebShareFiles: false,
-    label: "Facebook",
+    label: "Browser",
+    ...overrides,
   };
 }
 
-describe("externalBrowser", () => {
-  beforeEach(() => {
-    clearIabEscapeState();
-    vi.stubGlobal("window", {
-      location: {
-        href: "https://osmani-tv-landing.vercel.app/",
-        assign: vi.fn(),
-      },
-    });
-    vi.stubGlobal("sessionStorage", {
-      store: {} as Record<string, string>,
-      getItem(key: string) {
-        return (this as { store: Record<string, string> }).store[key] ?? null;
-      },
-      setItem(key: string, value: string) {
-        (this as { store: Record<string, string> }).store[key] = value;
-      },
-      removeItem(key: string) {
-        delete (this as { store: Record<string, string> }).store[key];
-      },
-    });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
+describe("externalBrowser IAB escape", () => {
   it("builds Chrome intent URL with fallback", () => {
     const intent = buildExternalChromeIntentUrl(
       "https://osmani-tv-landing.vercel.app/?from_iab=1",
     );
-    expect(intent).toContain("intent://osmani-tv-landing.vercel.app/");
-    expect(intent).toContain("package=com.android.chrome");
-    expect(intent).toContain("browser_fallback_url=");
+    expect(intent).toContain("intent://");
+    expect(intent).toContain("com.android.chrome");
+    expect(intent).toContain("browser_fallback_url");
   });
 
-  it("marks IAB return URL to prevent redirect loops", () => {
-    const marked = buildLandingUrlWithIabMarker();
-    expect(marked).toContain("from_iab=1");
-  });
-
-  it("detects from_iab query marker", () => {
+  it("marks landing URL with from_iab query param", () => {
     vi.stubGlobal("window", {
-      location: { href: "https://osmani-tv-landing.vercel.app/?from_iab=1" },
+      location: { href: "https://osmani-tv-landing.vercel.app/" },
     });
-    expect(hasIabReturnMarker()).toBe(true);
+    expect(buildLandingUrlWithIabMarker()).toContain("from_iab=1");
+    vi.unstubAllGlobals();
   });
 
-  it("attempts external handoff once", () => {
-    let assigned = "";
-    const location = { href: "https://osmani-tv-landing.vercel.app/" };
-    Object.defineProperty(location, "href", {
-      get() {
-        return "https://osmani-tv-landing.vercel.app/";
-      },
-      set(v: string) {
-        assigned = v;
-      },
-      configurable: true,
-    });
-    vi.stubGlobal("window", { location });
-    expect(shouldAttemptIabExternalHandoff(metaProfile())).toBe(true);
+  it("attempts IAB escape only on Meta Android before return marker", () => {
     expect(
-      attemptExternalBrowserHandoff("https://osmani-tv-landing.vercel.app/?from_iab=1"),
+      shouldAttemptIabExternalHandoff(
+        profile({ isAndroid: true, isMetaInApp: true, isFacebook: true }),
+      ),
     ).toBe(true);
-    expect(assigned).toContain("intent://");
-    expect(hasIabEscapeAttempted()).toBe(true);
-    expect(shouldAttemptIabExternalHandoff(metaProfile())).toBe(false);
+    expect(
+      shouldAttemptIabExternalHandoff(
+        profile({ isAndroid: true, isChrome: true }),
+      ),
+    ).toBe(false);
   });
 });

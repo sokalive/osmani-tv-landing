@@ -1,72 +1,51 @@
-/** Truthful download state machine — "started" ≠ "completed". */
+/** Truthful APK-first download state machine — no fake progress. */
 
 export type DownloadState =
   | "idle"
   | "starting"
-  | "downloading"
-  | "verifying"
-  | "completed"
-  | "install_handoff"
   | "browser_handoff"
   | "unavailable"
   | "blocked"
-  | "error"
-  | "cancelled";
+  | "error";
 
-/** States where OPEN / INSTALL is allowed (verified bytes in memory). */
-export function isVerifiedCompleteState(state: DownloadState): boolean {
-  return state === "completed" || state === "install_handoff";
-}
-
-/** States where UI is actively transferring or verifying bytes via fetch. */
-export function isActiveFetchState(state: DownloadState): boolean {
-  return (
-    state === "starting" ||
-    state === "downloading" ||
-    state === "verifying"
-  );
-}
-
-/** Browser download manager has the file; JS cannot verify completion. */
 export function isBrowserHandoffState(state: DownloadState): boolean {
   return state === "browser_handoff";
 }
 
-export function getPrimaryButtonLabel(state: DownloadState): string {
+export function isBusyState(state: DownloadState): boolean {
+  return state === "starting";
+}
+
+export function getInstallButtonLabel(state: DownloadState): string {
   switch (state) {
     case "starting":
-      return "STARTING…";
-    case "downloading":
-      return "DOWNLOADING…";
-    case "verifying":
-      return "VERIFYING…";
-    case "completed":
-    case "install_handoff":
-      return "OPEN / INSTALL";
+      return "INAANZA…";
     case "browser_handoff":
-    case "blocked":
-    case "error":
-    case "cancelled":
-      return "DOWNLOAD";
+      return "APK INAPAKULIWA…";
     case "unavailable":
-      return "Unavailable";
+      return "HAIPATIKANI";
+    case "error":
+    case "blocked":
+      return "INSTALL APK";
     default:
-      return "DOWNLOAD";
+      return "INSTALL APK";
   }
 }
 
-export function shouldShowDownloadAgain(state: DownloadState): boolean {
-  return isVerifiedCompleteState(state);
-}
-
-export function shouldShowInstallHint(state: DownloadState): boolean {
-  return isVerifiedCompleteState(state) || state === "browser_handoff";
-}
-
-export function calculateProgressPercent(
-  loaded: number,
-  total: number | null,
-): number | null {
-  if (total === null || total <= 0) return null;
-  return Math.min(100, Math.round((loaded / total) * 100));
+export function getStatusMessage(state: DownloadState, custom?: string): string {
+  if (custom) return custom;
+  switch (state) {
+    case "starting":
+      return "Inaanza kupakua…";
+    case "browser_handoff":
+      return "APK inapakuliwa — angalia arifa za simu yako, kisha bonyeza ili kusakinisha.";
+    case "unavailable":
+      return "APK haipatikani kwa sasa.";
+    case "error":
+      return "Imeshindikana kuanza upakuaji. Jaribu tena.";
+    case "blocked":
+      return "Bonyeza INSTALL APK ili kupakua.";
+    default:
+      return "Bonyeza ili kupakua na kusakinisha";
+  }
 }
