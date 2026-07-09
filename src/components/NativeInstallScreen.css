@@ -143,81 +143,22 @@
 }
 
 .native-install__app-name {
-  margin: 0 0 10px;
+  margin: 0 0 6px;
   font-size: 1.35rem;
   font-weight: 700;
 }
 
-.native-install__meta {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 22px;
-}
-
-.native-install__badge {
-  display: inline-block;
-  padding: 5px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(100, 160, 255, 0.35);
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: #7eb8ff;
-  letter-spacing: 0.02em;
-}
-
 .native-install__version {
+  margin: 0 0 20px;
   font-size: 0.78rem;
   color: rgba(255, 255, 255, 0.55);
 }
 
-.native-install__install-btn {
-  display: inline-flex;
-  align-items: center;
+.native-install__file-card-wrap {
+  width: 100%;
+  display: flex;
   justify-content: center;
-  gap: 10px;
-  width: min(100%, 320px);
-  padding: 16px 24px;
-  border: none;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #2b8cff 0%, #1a6fe8 100%);
-  box-shadow:
-    0 4px 20px rgba(33, 120, 255, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-}
-
-.native-install__install-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.native-install__install-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.native-install__install-btn:disabled {
-  opacity: 0.72;
-  cursor: default;
-}
-
-.native-install__btn-icon {
-  width: 20px;
-  height: 20px;
-}
-
-.native-install__hint {
-  margin: 14px 0 0;
-  max-width: 300px;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 8px;
 }
 
 .native-install__bottom-nav {

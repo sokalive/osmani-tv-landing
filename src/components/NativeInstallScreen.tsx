@@ -1,36 +1,7 @@
 import type { ReactNode } from "react";
 import { APK_CONFIG } from "../config/download";
-import { formatApkSizeBadge } from "../utils/apkDelivery";
-import {
-  getInstallButtonLabel,
-  type DownloadState,
-} from "../utils/downloadState";
+import { ApkFileCard } from "./ApkFileCard";
 import "./NativeInstallScreen.css";
-
-type NativeInstallScreenProps = {
-  state: DownloadState;
-  message: string;
-  onInstall: () => void;
-};
-
-function DownloadIcon() {
-  return (
-    <svg
-      className="native-install__btn-icon"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 3v12m0 0l4-4m-4 4l-4-4M5 21h14"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function MenuIcon() {
   return (
@@ -85,14 +56,7 @@ function NavIcon({ type }: { type: "live" | "filamu" | "series" | "zaidi" }) {
   );
 }
 
-export function NativeInstallScreen({
-  state,
-  message,
-  onInstall,
-}: NativeInstallScreenProps) {
-  const busy = state === "starting" || state === "browser_handoff";
-  const buttonLabel = getInstallButtonLabel(state);
-
+export function NativeInstallScreen() {
   return (
     <div className="native-install">
       <div className="native-install__glow" aria-hidden="true" />
@@ -139,25 +103,11 @@ export function NativeInstallScreen({
 
         <h2 className="native-install__app-name">Osmani TV Mx</h2>
 
-        <div className="native-install__meta">
-          <span className="native-install__badge">{formatApkSizeBadge()}</span>
-          <span className="native-install__version">Version {APK_CONFIG.version}</span>
+        <p className="native-install__version">Version {APK_CONFIG.version}</p>
+
+        <div className="native-install__file-card-wrap">
+          <ApkFileCard />
         </div>
-
-        <button
-          type="button"
-          className="native-install__install-btn"
-          onClick={onInstall}
-          disabled={busy && state === "browser_handoff"}
-          aria-busy={busy}
-        >
-          <DownloadIcon />
-          {buttonLabel}
-        </button>
-
-        <p className="native-install__hint" role="status">
-          {message}
-        </p>
       </main>
 
       <nav className="native-install__bottom-nav" aria-label="App navigation">
